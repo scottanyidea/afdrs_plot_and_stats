@@ -18,11 +18,12 @@ from shapely.geometry import mapping
 import pandas as pd
 from datetime import datetime
 import time
+from pathlib import Path
+import multiprocessing as mp
 
-
-def replace_fuel_calc_rating(original_path, newdata_paths, date_list, area_file_path, area_name, fuel_lut_pth_orig, fuel_lut_pth_new=None):
+def replace_fuel_calc_rating(original_path, newdata_paths, date_in, area_polygon, fuel_lut_pth_orig, fuel_lut_pth_new=None):
     """
-    Over a fire behaviour index dataset (such as recalculated VicGrids datacube), replace one or multiple fuel types with another
+    For a date, replace one or multiple fuel types with another
     calculated version that has had changes to fuel parameters or the model used.
 
     This assumes daily files with the format "VIC_<date>_recalc.nc"
@@ -33,9 +34,9 @@ def replace_fuel_calc_rating(original_path, newdata_paths, date_list, area_file_
     
     newdata_paths : String or list of strings for the path(s) to the folders containing the files including the model or parameter changes.
     
-    date_list : List of dates to run the calculation over. If the data is unavailable for a date in this list, it will be skipped.
+    date_in : Dates to run the calculation for. If the data is unavailable, it will be skipped.
     
-    area_file_path : Path to a shapefile (file, not folder!) that defines the regions we want to designate a rating for.
+    area_polygon : A geopandas shape (polygon) that defines the region over which we want to calculate the rating.
     
     area_name : Name of the region within above shapefile that we want to designate FBIs and ratings for..
 
@@ -51,20 +52,13 @@ def replace_fuel_calc_rating(original_path, newdata_paths, date_list, area_file_
     rating_recalc = []
     orig_dom_type = []
     recalc_dom_type = []
-    for dt in date_list:
-        time_start = time.time()
-        print('starting '+str(dt))
-        try:
+    try:
             #First get the files.
-            date_str = dt.strftime("%Y%m%d")
+            date_str = date_in.strftime("%Y%m%d")
             official_file_in = xr.open_dataset(original_path+'VIC_'+date_str+'_recalc.nc')
             
             #Find maximum FBI along the day
-            official_max = official_file_in['index_1'].max(dim='time',skipna=True, keep_attrs=True)
-        
-            #Filter down to desired FWA. #EPSG:4326 corresponds to WGS 1984 CRS
-            shp_in = geopandas.read_file("C://Users/clark/analysis1/afdrs_fbi_recalc-main/data/shp/PID90109_VIC_Boundary_SHP_FWA\PID90109_VIC_Boundary_SHP_FWA.shp", crs='ESPG:4326')
-            area_polygon = shp_in[shp_in['Area_Name']==area_name]
+            official_max = official_file_in['index_1'].max(dim='time',skipna=True, keep_attrs=True)        
 
             official_max.rio.set_spatial_dims(x_dim='longitude',y_dim='latitude',inplace=True)
             official_max.rio.write_crs("EPSG:4326",inplace=True)
@@ -73,13 +67,10 @@ def replace_fuel_calc_rating(original_path, newdata_paths, date_list, area_file_
             #Find the 90th percentile FBI for the original file.
             desig_fbi = np.nanpercentile(clipped_orig, 90)
             desig_rating = rating_calc(desig_fbi)
-            fbi_orig.append(desig_fbi)
-            rating_orig.append(desig_rating)
             
             #Find the fuel type that is most dominant in the 90th percentile.
             fuel_type_map_fbi = official_file_in['fuel_type']
-            dom_typ = find_dominant_fuel_type_for_a_rating(clipped_orig, desig_fbi, fuel_type_map_fbi,fuel_lut_pth_orig)
-            orig_dom_type.append(dom_typ)
+            orig_dom_type = find_dominant_fuel_type_for_a_rating(clipped_orig, desig_fbi, fuel_type_map_fbi,fuel_lut_pth_orig)
             
             #Do the same to the recalculated data, iteratively
             clipped_replaced = xr.DataArray(coords=(clipped_orig['latitude'], clipped_orig['longitude']))
@@ -96,8 +87,6 @@ def replace_fuel_calc_rating(original_path, newdata_paths, date_list, area_file_
             clipped_replaced.name = 'index_1'
             recalc_fbi = np.nanpercentile(clipped_replaced, 90)
             recalc_rating = rating_calc(recalc_fbi)
-            fbi_recalc.append(recalc_fbi)
-            rating_recalc.append(recalc_rating)
             
             #Set "new" fuel lut to the old if it hasn't been set:
             if fuel_lut_pth_new is None:
@@ -105,21 +94,17 @@ def replace_fuel_calc_rating(original_path, newdata_paths, date_list, area_file_
             
             #Find most dominant fuel type for the recalculated data.
             dom_typ_recalc = find_dominant_fuel_type_for_a_rating(clipped_replaced, recalc_fbi, fuel_type_map_fbi, fuel_lut_pth_new)
-            recalc_dom_type.append(dom_typ_recalc)
+
             
-            #If we get to this point, grab the date.
-            dates_used.append(dt)
             
             official_file_in.close()
-        except FileNotFoundError:
-            print(date_str+" not found. Skip to next")
-            pass
-        finally:
-            time_end = time.time()
-            print('Time for this iteration: '+str(time_end - time_start))
-    rating_table = pd.DataFrame(list(zip(dates_used, fbi_orig, rating_orig, orig_dom_type, fbi_recalc, rating_recalc, recalc_dom_type)), columns=['Date', 'Original FBI','Original rating', 'Original Dominant FT', 'Changed FBI','Changed rating', 'Changed dominant FT'])
+    except FileNotFoundError:
+            print(date_str+" not found.")
+            
+
+    outputs_ = date_in, desig_fbi, desig_rating, orig_dom_type, recalc_fbi, recalc_rating, dom_typ_recalc
     
-    return rating_table
+    return outputs_
  
 def rating_calc(fbi):
     if fbi < 12:
@@ -168,7 +153,7 @@ def find_dominant_fuel_type_for_a_rating(fbi_arr, rating_val, fuel_type_map, fue
     return topmodel  #ie. return the NAME of the top fuel type
 
 if __name__=="__main__":
-    dc_path = 'C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/v2024.1b7/full_recalc_jan_24/recalc_files/'
+    dc_path = 'C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/full_recalc_jan_24/recalc_files/'
     recalc_path = ['C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/mallee_only_add_ltldesert_jan24/recalc_files/']
     #               'C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/recalc_grass_35/recalc_files/']
 
@@ -177,11 +162,30 @@ if __name__=="__main__":
     path_to_fuel_lut_orig = "C:/Users/clark/analysis1/afdrs_fbi_recalc-main/data/fuel/fuel-type-model-authorised-vic-20231012043244.csv"
     path_to_fuel_lut_recalc = "C:/Users/clark/analysis1/afdrs_fbi_recalc-main/data/fuel/fuel-type-model-authorised-vic-20231012043244_pt_ltldesmallee.csv"
 
+    shp_in = geopandas.read_file(shp_path, crs='ESPG:4326')   
+    
     area_name = 'Wimmera'
-
+    area_in = shp_in[shp_in['Area_Name']==area_name]
     #Set dates:
     dates_ = pd.date_range(datetime(2017,10,1), datetime(2022,5,30), freq='D')
     #dates_ = pd.date_range(datetime(2020,4,4), datetime(2020,4,4), freq='D')
 
-    fbi_and_rating = replace_fuel_calc_rating(dc_path, recalc_path, dates_, shp_path, area_name, path_to_fuel_lut_orig, path_to_fuel_lut_recalc)
-    fbi_and_rating.to_csv("C:/Users/clark/analysis1/datacube_daily_stats/version_jan24/wimmera_ltldes_mal/wimmera_historical_fbi_rating_ltldesertmal.csv")
+    #Get a list of the dates actually in the range by checking all the daily files are there.
+    dates_used=[]
+    for dt in dates_:
+        date_str = dt.strftime("%Y%m%d")
+        if Path(dc_path+'VIC_'+date_str+'_recalc.nc').is_file():
+                dates_used.append(dt)
+    
+    pool = mp.Pool(12)
+    start_time = time.time()
+    results_pool = [pool.apply_async(replace_fuel_calc_rating, args=(dc_path, recalc_path, dt, area_in, path_to_fuel_lut_orig, path_to_fuel_lut_recalc)) for dt in dates_used]    
+    pool.close()
+    pool.join()
+    results_list_ = [r.get() for r in results_pool]
+    end_time = time.time()
+    print("Time taken: "+str(round(end_time-start_time, 3)))
+
+    fbi_and_rating = pd.DataFrame(results_list_, columns=['Date', 'Original FBI', 'Original rating', 'Original Dominant FT', 'Changed FBI','Changed rating', 'Changed dominant FT'])
+#    fbi_and_rating = replace_fuel_calc_rating(dc_path, recalc_path, dates_used[1], area_in, path_to_fuel_lut_orig, path_to_fuel_lut_recalc)
+    #fbi_and_rating.to_csv("C:/Users/clark/analysis1/datacube_daily_stats/version_jan24/wimmera_ltldes_mal/wimmera_historical_fbi_rating_ltldesertmal.csv")
