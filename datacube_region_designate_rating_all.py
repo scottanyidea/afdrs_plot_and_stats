@@ -1,6 +1,9 @@
 #Calculates the new FBI and McArthur FDI for a specific region (here it's done by FWA but can be
 #replaced with LGAs, etc)
 
+#This one is to do all areas in a shapefile, e.g. LGA, FWD. This assumes the file "datacube_region_designate_rating.py"
+#is in the same directory as this.
+
 import numpy as np
 import xarray as xr
 import geopandas
@@ -10,49 +13,10 @@ import pandas as pd
 from datetime import datetime
 import time
 
-from datacube_region_designate_rating import rating_calc
-
 import multiprocessing as mp
 from pathlib import Path
 
-def calc_region_rating(data_path, date_in, area_polygon, fuel_lut_path):
-    from replace_fueltype_changes_designate_rating import find_dominant_fuel_type_for_a_rating
-
-    try:
-            #First get the files.
-            date_str = date_in.strftime("%Y%m%d")
-            file_in = xr.open_dataset(data_path+"VIC_"+date_str+"_recalc.nc")
-        
-            #Find maximum FBI along the day
-            recalc_max = file_in['index_1'].max(dim='time',skipna = True, keep_attrs=True)
-        
-            #Filter down to desired FWA. #EPSG:4326 corresponds to WGS 1984 CRS
-
-            recalc_max.rio.set_spatial_dims(x_dim='longitude',y_dim='latitude',inplace=True) #OK doing this makes a lot more sense now there's a time dimension. It's telling rioxarray what the spatial dims are!
-            recalc_max.rio.write_crs("EPSG:4326",inplace=True)  #And now tell it the coord reference system.
-            clipped_recalc = recalc_max.rio.clip(area_polygon.geometry.apply(mapping), area_polygon.crs, drop=False)
-
-            #Find the 90th percentile FBI for the original file.
-            desig_fbi = np.nanpercentile(clipped_recalc, 90)
-            desig_rating = rating_calc(desig_fbi)
-            
-            #Find dominant model for each rating (ie. what's driven the 90th percentile)
-            fuel_map = file_in['fuel_type']
-            dom_typ_str = find_dominant_fuel_type_for_a_rating(clipped_recalc, desig_fbi, fuel_map, fuel_lut_path)
-                        
-            #Also get McArthur FDI.
-            fdi_max = file_in['FDI_SFC'].max(dim='time',skipna=True,keep_attrs=True)
-            fdi_max.rio.set_spatial_dims(x_dim='longitude',y_dim='latitude',inplace=True)
-            fdi_max.rio.write_crs("EPSG:4326",inplace=True)
-            clipped_fdi = fdi_max.rio.clip(area_polygon.geometry.apply(mapping),area_polygon.crs,drop=False)
-                
-            fdi_out = np.nanpercentile(clipped_fdi, 90)
-            file_in.close()
-
-    except FileNotFoundError:
-            print(date_str+" not found. Exiting")
-    result_list = date_in, desig_fbi, desig_rating, dom_typ_str, fdi_out
-    return  result_list
+from datacube_region_designate_rating import calc_region_rating
 
 if __name__=="__main__":
     fbi_data_path = 'C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/full_recalc_jan_24/recalc_files/'
@@ -103,4 +67,4 @@ if __name__=="__main__":
         k=k+1
         end_time = time.time()
         print('Time taken for this region: '+str(round(end_time-start_time, 3)))
-    fbi_and_rating.to_csv("C:/Users/clark/analysis1/datacube_daily_stats/version_feb24/datacube_2017-2022_fbi_rating_lga.csv")
+#    fbi_and_rating.to_csv("C:/Users/clark/analysis1/datacube_daily_stats/version_feb24/datacube_2017-2022_fbi_rating_lga.csv")
