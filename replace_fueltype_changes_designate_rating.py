@@ -8,7 +8,9 @@
 #identical one...
 
 #Edit Jan 24: To take multiple single model recalcs and apply all of them to the original data.
-#Currently a work in progress...
+
+#This assumes the file "datacube_region_designate_rating.py"
+#is in the same directory as this.
 
 import numpy as np
 import xarray as xr
@@ -22,6 +24,7 @@ from pathlib import Path
 import multiprocessing as mp
 
 def replace_fuel_calc_rating(original_path, newdata_paths, date_in, area_polygon, fuel_lut_pth_orig, fuel_lut_pth_new=None):
+    from datacube_region_designate_rating import find_dominant_fuel_type_for_a_rating, rating_calc
     """
     For a date, replace one or multiple fuel types with another
     calculated version that has had changes to fuel parameters or the model used.
@@ -105,7 +108,7 @@ def replace_fuel_calc_rating(original_path, newdata_paths, date_in, area_polygon
     outputs_ = date_in, desig_fbi, desig_rating, orig_dom_type, recalc_fbi, recalc_rating, dom_typ_recalc
     
     return outputs_
- 
+"""
 def rating_calc(fbi):
     if fbi < 12:
         rating = "0"
@@ -151,7 +154,7 @@ def find_dominant_fuel_type_for_a_rating(fbi_arr, rating_val, fuel_type_map, fue
         topmodel = top_pixels_table.FBM.value_counts().index[0]
         
     return topmodel  #ie. return the NAME of the top fuel type
-
+    """
 if __name__=="__main__":
     dc_path = 'C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/full_recalc_jan_24/recalc_files/'
     recalc_path = ['C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/mallee_only_add_ltldesert_jan24/recalc_files/']
