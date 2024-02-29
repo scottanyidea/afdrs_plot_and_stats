@@ -65,45 +65,49 @@ def make_observation_table_from_archive(start_timestamp, end_timestamp, stations
                             'observation_data.accumulated_precip',
                             'observation_data.kbdi',
                             'observation_data.curing',
+                            'observation_data.grass_fuel_load',
                             'observation_data.df',
                             'station_info.primary_fbm',
                             'observation_data.primary_fbi',
                             'station_info.secondary_fbm',
                             'observation_data.secondary_fbi']]
-    
+        row_data['Time'] = current_time_list[-1]
         #If first iteration, start the pandas dataframe. If not, just append it.
         if k==0:
             output_data = row_data
         else:
-            output_data.loc[k] = row_data.iloc[0]
+            output_data = output_data._append(row_data, ignore_index=True)
     
         #Reset current time 10 minutes later
         current_time = current_time+timedelta(minutes=10)
         k=k+1
 
-
-    output_data.columns=   ['Station_full',
-                                   'Station_desc',
-                                   'Latitude',
-                                   'Longitude',
-                                   'Temperature',
-                                   'RH',
-                                   'Dew point',
-                                   'Wind dir',
-                                   'Wind speed kmh',
-                                   'Wind gust kmh',
-                                   'Accum precip',
-                                   'KBDI',
-                                   'Curing',
-                                   'DF',
-                                   'Primary FBM',
-                                   'Primary FBI',
-                                   'Secondary FBM',
-                                   'Secondary FBI']
-
     #Don't forget to add the timestamps... and place it as the first row.
-    output_data['Time'] = current_time_list
     output_data = output_data[['Time'] + [col for col in output_data.columns if col!='Time']]
+    #Rename columns to stuff we want:
+    output_data.columns=   ['Time',
+                            'Station_full',
+                            'Station_desc',
+                            'Latitude',
+                            'Longitude',
+                            'Temperature',
+                            'RH',
+                            'Dew point',
+                            'Wind dir',
+                            'Wind speed kmh',
+                            'Wind gust kmh',
+                            'Accum precip',
+                            'KBDI',
+                            'Curing',
+                            'Grass Fuel Load',
+                            'DF',
+                            'Primary FBM',
+                            'Primary FBI',
+                            'Secondary FBM',
+                            'Secondary FBI']
+
+    
+    
     return output_data
 
 """
@@ -113,8 +117,8 @@ if __name__=='__main__':
     start_date = datetime(year=2024,month=2,day=13,hour=0,minute=0,second=0)
     end_date = datetime(year=2024, month=2,day=13, hour=23,minute=55,second=59)
     
-    stations_to_pick = ['BALLARAT AERODROME']
+    stations_to_pick = ["STAWELL AERODROME", "MOUNT WILLIAM", "HORSHAM AERODROME", "BALLARAT AERODROME"]
 
     output_table = make_observation_table_from_archive(start_date, end_date, stations_to_pick)
 
-output_table.to_csv('Archived_obs_20240213_Ballarat.csv')
+output_table.to_csv('Archived_obs_20240213_Wimmera_selections.csv')

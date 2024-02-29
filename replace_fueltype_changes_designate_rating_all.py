@@ -97,8 +97,6 @@ def replace_fuel_calc_rating(original_path, newdata_paths, date_in, area_polygon
             
             #Find most dominant fuel type for the recalculated data.
             dom_typ_recalc = find_dominant_fuel_type_for_a_rating(clipped_replaced, recalc_fbi, fuel_type_map_fbi, fuel_lut_pth_new)
-
-            
             
             official_file_in.close()
     except FileNotFoundError:
@@ -108,87 +106,61 @@ def replace_fuel_calc_rating(original_path, newdata_paths, date_in, area_polygon
     outputs_ = date_in, desig_fbi, desig_rating, orig_dom_type, recalc_fbi, recalc_rating, dom_typ_recalc
     
     return outputs_
-"""
-def rating_calc(fbi):
-    if fbi < 12:
-        rating = "0"
-    else:
-        if fbi < 24:
-            rating = "1"
-        else:
-            if fbi < 50:
-                rating = "2"
-            else:
-                if fbi <100:
-                    rating = "3"
-                else:
-                    rating = "4"
-    return rating
 
-def find_dominant_fuel_type_for_a_rating(fbi_arr, rating_val, fuel_type_map, fuel_lut_path):
-    #This assumes the fbi_arrat
     
-    #Mask fuel type map to be same as the FBI map:
-    fuel_type_map_clipped = xr.where(fbi_arr, fuel_type_map[0,:,:], np.nan)
-    fuel_type_map_clipped.name = 'fuel_type'
-    
-    #Merge FBI with fuel types, and mask to only those pixels above 90th percentile
-    merged_fbi_ft = xr.merge([fbi_arr, fuel_type_map_clipped])
-    merged_fbi_ft = merged_fbi_ft.where((merged_fbi_ft['index_1'] >= rating_val))    #get only those values above say 90th percentile
-    top_pixels_table = merged_fbi_ft.to_dataframe()
-    top_pixels_table.dropna(axis=0, inplace=True)
-
-    #Load the fuel lut to match fuel types to the codes and pixels:
-    fuel_lut = pd.read_csv(fuel_lut_path)
-    fuel_FBM_dict = pd.Series(fuel_lut.FBM.values,index=fuel_lut.FTno_State).to_dict()
-    top_pixels_table['FBM'] = top_pixels_table['fuel_type'].map(fuel_FBM_dict)
-    
-    #If the highest ranked fuel model has less than half the points, return "none" as
-    #we don't consider it dominant. Else, return the name of the model.
-    #OR: if we have a small region, sometimes all the pixels have a zero FBI and it 
-    #somehow messes up the grater than or equal to function even if threshold is also zero.
-    #In these cases also set "None".
-    if (len(top_pixels_table)==0) or (top_pixels_table.FBM.value_counts().iloc[0]/top_pixels_table.FBM.value_counts().sum() < 0.5):
-        topmodel = 'None'
-    else:
-        topmodel = top_pixels_table.FBM.value_counts().index[0]
-        
-    return topmodel  #ie. return the NAME of the top fuel type
-    """
 if __name__=="__main__":
     dc_path = 'C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/full_recalc_jan_24/recalc_files/'
     recalc_path = ['C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/ltldesert_fuelupdate/recalc_files/',
                    'C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/mallee_only_25pccover_FL7_dec23_deltabug/recalc_files/']
 
-    shp_path = "C://Users/clark/analysis1/afdrs_fbi_recalc-main/data/shp/PID90109_VIC_Boundary_SHP_FWA\PID90109_VIC_Boundary_SHP_FWA.shp"
+#    shp_path = "C://Users/clark/analysis1/afdrs_fbi_recalc-main/data/shp/PID90109_VIC_Boundary_SHP_FWA\PID90109_VIC_Boundary_SHP_FWA.shp"
+#    shp_path = "C://Users/clark/analysis1/afdrs_fbi_recalc-main/data/shp/PID90309_VIC_Boundary_SHP_ICC\PID90309_VIC_Boundary_SHP_ICC.shp"
+#    shp_path = "C://Users/clark/analysis1/afdrs_fbi_recalc-main/data/shp/PID90509_VIC_Boundary_SHP_PDD\PID90509_VIC_Boundary_SHP_PDD.shp"
+#    shp_path = "C://Users/clark/analysis1/afdrs_fbi_recalc-main/data/shp/PID90209_VIC_Boundary_SHP_CFA\PID90209_VIC_Boundary_SHP_CFA.shp"
+    shp_path = "C://Users/clark/analysis1/afdrs_fbi_recalc-main/data/shp/PID90409_VIC_Boundary_SHP_LGA\PID90409_VIC_Boundary_SHP_LGA.shp"    
 
     path_to_fuel_lut_orig = "C:/Users/clark/analysis1/afdrs_fbi_recalc-main/data/fuel/fuel-type-model-authorised-vic-20231012043244.csv"
-    path_to_fuel_lut_recalc = "C:/Users/clark/analysis1/afdrs_fbi_recalc-main/data/fuel/fuel-type-model-authorised-vic-20231214033606.csv"
+    path_to_fuel_lut_recalc = "C:/Users/clark/analysis1/afdrs_fbi_recalc-main/data/fuel/fuel-type-model-authorised-vic-20231012043244_pt_ltldesmallee.csv"
 
     shp_in = geopandas.read_file(shp_path, crs='ESPG:4326')   
-    
-    area_name = 'Northern Country'
-    area_in = shp_in[shp_in['Area_Name']==area_name]
+
     #Set dates:
     dates_ = pd.date_range(datetime(2017,10,1), datetime(2022,5,31), freq='D')
-    #dates_ = pd.date_range(datetime(2020,4,4), datetime(2020,4,4), freq='D')
-
+    
     #Get a list of the dates actually in the range by checking all the daily files are there.
     dates_used=[]
     for dt in dates_:
         date_str = dt.strftime("%Y%m%d")
         if Path(dc_path+'VIC_'+date_str+'_recalc.nc').is_file():
                 dates_used.append(dt)
-    
-    pool = mp.Pool(12)
-    start_time = time.time()
-    results_pool = [pool.apply_async(replace_fuel_calc_rating, args=(dc_path, recalc_path, dt, area_in, path_to_fuel_lut_orig, path_to_fuel_lut_recalc)) for dt in dates_used]    
-    pool.close()
-    pool.join()
-    results_list_ = [r.get() for r in results_pool]
-    end_time = time.time()
-    print("Time taken: "+str(round(end_time-start_time, 3)))
 
-    fbi_and_rating = pd.DataFrame(results_list_, columns=['Date', 'Original FBI', 'Original rating', 'Original Dominant FT', 'Changed FBI','Changed rating', 'Changed dominant FT'])
-#    fbi_and_rating = replace_fuel_calc_rating(dc_path, recalc_path, dates_used[1], area_in, path_to_fuel_lut_orig, path_to_fuel_lut_recalc)
-    fbi_and_rating.to_csv("C:/Users/clark/analysis1/datacube_daily_stats/version_mar24/northern_country_historical_fbi_rating_malleechange.csv")
+    k=0
+    for area_name in shp_in['Area_Name']:
+        lgas_to_miss =['Darebin', 'Moreland', 'Maribyrnong', 'Yarra', 'Boroondara','Monash','Banyule', 'Port Phillip', 
+                       'Glen Eira', 'Bayside', 'Hobsons Bay', 'Maroondah', 'Moonee Valley',
+                       'Whitehorse','Stonnington', 'Falls Creek Alpine Resort', 'Lake Mountain Alpine Resort',
+                       'Mount Buller Alpine Resort', 'Mount Hotham Alpine Resort', 'Mount Stirling Alpine Resort', 'Gabo Island',
+                       'Kingston']
+        if area_name in lgas_to_miss:
+            print("Skip "+area_name+", is in metro or otherwise too small. Next.")
+            continue
+        print('Commencing '+area_name)    
+        start_time = time.time()
+        pool = mp.Pool(12)
+        area_in = shp_in[shp_in['Area_Name']==area_name]
+        results_pool = [pool.apply_async(replace_fuel_calc_rating, args=(dc_path, recalc_path, dt, area_in, path_to_fuel_lut_orig, path_to_fuel_lut_recalc)) for dt in dates_used]    
+        pool.close()
+        pool.join()
+        results_list_ = [r.get() for r in results_pool]
+        end_time = time.time()
+        print("Time taken: "+str(round(end_time-start_time, 3)))
+        fbi_and_rating_per_area = pd.DataFrame(results_list_, columns=['Date', area_name+'_Original_FBI', area_name+'_Original_rating', area_name+'_Original_Dominant FT', area_name+'_Changed_FBI', area_name+'_Changed_rating', area_name+'_Changed_dominant FT'])
+        if k==0:
+            fbi_and_rating_changes = fbi_and_rating_per_area
+        else:
+            fbi_and_rating_changes = fbi_and_rating_changes.merge(fbi_and_rating_per_area, left_on='Date', right_on='Date', how='inner')
+        k=k+1
+        end_time = time.time()
+        print('Time taken for this region: '+str(round(end_time-start_time, 3)))
+
+    fbi_and_rating_changes.to_csv("C:/Users/clark/analysis1/datacube_daily_stats/version_mar24/fbi_changes_ltldes_mallee_lga.csv")
