@@ -156,21 +156,23 @@ def find_dominant_fuel_type_for_a_rating(fbi_arr, rating_val, fuel_type_map, fue
     return topmodel  #ie. return the NAME of the top fuel type
     """
 if __name__=="__main__":
-    dc_path = 'C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/full_recalc_jan_24/recalc_files/'
-    recalc_path = ['C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/ltldesert_fuelupdate/recalc_files/',
-                   'C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/mallee_only_25pccover_FL7_dec23_deltabug/recalc_files/']
+    dc_path = 'C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/full_recalc_jul_24/recalc_files/'
+    #recalc_path can be a list of multiple paths
+    recalc_path = ['C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/allforest_canopyheight_changes/recalc_files/']
 
     shp_path = "C://Users/clark/analysis1/afdrs_fbi_recalc-main/data/shp/PID90109_VIC_Boundary_SHP_FWA\PID90109_VIC_Boundary_SHP_FWA.shp"
+#    shp_path = "C://Users/clark/analysis1/afdrs_fbi_recalc-main/data/shp/PID90409_VIC_Boundary_SHP_LGA\PID90409_VIC_Boundary_SHP_LGA.shp"    
 
-    path_to_fuel_lut_orig = "C:/Users/clark/analysis1/afdrs_fbi_recalc-main/data/fuel/fuel-type-model-authorised-vic-20231012043244.csv"
+
+    path_to_fuel_lut_orig = "C:/Users/clark/analysis1/afdrs_fbi_recalc-main/data/fuel/fuel-type-model-authorised-vic-20231214033606.csv"
     path_to_fuel_lut_recalc = "C:/Users/clark/analysis1/afdrs_fbi_recalc-main/data/fuel/fuel-type-model-authorised-vic-20231214033606.csv"
 
     shp_in = geopandas.read_file(shp_path, crs='ESPG:4326')   
     
-    area_name = 'Northern Country'
+    area_name = 'Wimmera'
     area_in = shp_in[shp_in['Area_Name']==area_name]
     #Set dates:
-    dates_ = pd.date_range(datetime(2017,10,1), datetime(2022,5,31), freq='D')
+    dates_ = pd.date_range(datetime(2017,10,1), datetime(2017,11,1), freq='D')
     #dates_ = pd.date_range(datetime(2020,4,4), datetime(2020,4,4), freq='D')
 
     #Get a list of the dates actually in the range by checking all the daily files are there.
@@ -179,6 +181,7 @@ if __name__=="__main__":
         date_str = dt.strftime("%Y%m%d")
         if Path(dc_path+'VIC_'+date_str+'_recalc.nc').is_file():
                 dates_used.append(dt)
+    replace_fuel_calc_rating(dc_path, recalc_path, dates_used[0], area_in, path_to_fuel_lut_orig, path_to_fuel_lut_recalc)
     
     pool = mp.Pool(12)
     start_time = time.time()
@@ -188,7 +191,7 @@ if __name__=="__main__":
     results_list_ = [r.get() for r in results_pool]
     end_time = time.time()
     print("Time taken: "+str(round(end_time-start_time, 3)))
-
+    
     fbi_and_rating = pd.DataFrame(results_list_, columns=['Date', 'Original FBI', 'Original rating', 'Original Dominant FT', 'Changed FBI','Changed rating', 'Changed dominant FT'])
 #    fbi_and_rating = replace_fuel_calc_rating(dc_path, recalc_path, dates_used[1], area_in, path_to_fuel_lut_orig, path_to_fuel_lut_recalc)
-    fbi_and_rating.to_csv("C:/Users/clark/analysis1/datacube_daily_stats/version_mar24/northern_country_historical_fbi_rating_malleechange.csv")
+    fbi_and_rating.to_csv("C:/Users/clark/analysis1/datacube_daily_stats/version_jul24/changes/fwd/forest/"+area_name+"_dc_fbi_rating_forest_canopy.csv")
