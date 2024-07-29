@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 import multiprocessing as mp
 
-def replace_fuel_calc_rating(original_path, newdata_paths, date_in, area_polygon, fuel_lut_pth_orig, fuel_lut_pth_new=None):
+def replace_fuel_calc_rating(original_path, newdata_paths, date_in, area_mask, fuel_lut_pth_orig, fuel_lut_pth_new=None):
     from datacube_region_designate_rating import find_dominant_fuel_type_for_a_rating, rating_calc
     """
     For a date, replace one or multiple fuel types with another
@@ -62,10 +62,9 @@ def replace_fuel_calc_rating(original_path, newdata_paths, date_in, area_polygon
             
             #Find maximum FBI along the day
             official_max = official_file_in['index_1'].max(dim='time',skipna=True, keep_attrs=True)        
-
-            official_max.rio.set_spatial_dims(x_dim='longitude',y_dim='latitude',inplace=True)
-            official_max.rio.write_crs("EPSG:4326",inplace=True)
-            clipped_orig = official_max.rio.clip(area_polygon.geometry.apply(mapping), area_polygon.crs, drop=False)
+            
+            #Area mask to the desired region:
+            clipped_orig = official_max.where(~area_mask.isnull())
             
             #Find the 90th percentile FBI for the original file.
             desig_fbi = np.nanpercentile(clipped_orig, 90)
@@ -80,9 +79,7 @@ def replace_fuel_calc_rating(original_path, newdata_paths, date_in, area_polygon
             for recalcs in newdata_paths:
                 recalc_file_in = xr.open_dataset(recalcs+"VIC_"+date_str+"_recalc.nc")
                 recalc_max = recalc_file_in['index_1'].max(dim='time',skipna = True, keep_attrs=True)
-                recalc_max.rio.set_spatial_dims(x_dim='longitude',y_dim='latitude',inplace=True) 
-                recalc_max.rio.write_crs("EPSG:4326",inplace=True)
-                clipped_recalc = recalc_max.rio.clip(area_polygon.geometry.apply(mapping), area_polygon.crs, drop=False)
+                clipped_recalc = recalc_max.where(~area_mask.isnull())
                 clipped_replaced = clipped_replaced.fillna(clipped_recalc)
                 recalc_file_in.close()
             
@@ -108,53 +105,7 @@ def replace_fuel_calc_rating(original_path, newdata_paths, date_in, area_polygon
     outputs_ = date_in, desig_fbi, desig_rating, orig_dom_type, recalc_fbi, recalc_rating, dom_typ_recalc
     
     return outputs_
-"""
-def rating_calc(fbi):
-    if fbi < 12:
-        rating = "0"
-    else:
-        if fbi < 24:
-            rating = "1"
-        else:
-            if fbi < 50:
-                rating = "2"
-            else:
-                if fbi <100:
-                    rating = "3"
-                else:
-                    rating = "4"
-    return rating
 
-def find_dominant_fuel_type_for_a_rating(fbi_arr, rating_val, fuel_type_map, fuel_lut_path):
-    #This assumes the fbi_arrat
-    
-    #Mask fuel type map to be same as the FBI map:
-    fuel_type_map_clipped = xr.where(fbi_arr, fuel_type_map[0,:,:], np.nan)
-    fuel_type_map_clipped.name = 'fuel_type'
-    
-    #Merge FBI with fuel types, and mask to only those pixels above 90th percentile
-    merged_fbi_ft = xr.merge([fbi_arr, fuel_type_map_clipped])
-    merged_fbi_ft = merged_fbi_ft.where((merged_fbi_ft['index_1'] >= rating_val))    #get only those values above say 90th percentile
-    top_pixels_table = merged_fbi_ft.to_dataframe()
-    top_pixels_table.dropna(axis=0, inplace=True)
-
-    #Load the fuel lut to match fuel types to the codes and pixels:
-    fuel_lut = pd.read_csv(fuel_lut_path)
-    fuel_FBM_dict = pd.Series(fuel_lut.FBM.values,index=fuel_lut.FTno_State).to_dict()
-    top_pixels_table['FBM'] = top_pixels_table['fuel_type'].map(fuel_FBM_dict)
-    
-    #If the highest ranked fuel model has less than half the points, return "none" as
-    #we don't consider it dominant. Else, return the name of the model.
-    #OR: if we have a small region, sometimes all the pixels have a zero FBI and it 
-    #somehow messes up the grater than or equal to function even if threshold is also zero.
-    #In these cases also set "None".
-    if (len(top_pixels_table)==0) or (top_pixels_table.FBM.value_counts().iloc[0]/top_pixels_table.FBM.value_counts().sum() < 0.5):
-        topmodel = 'None'
-    else:
-        topmodel = top_pixels_table.FBM.value_counts().index[0]
-        
-    return topmodel  #ie. return the NAME of the top fuel type
-    """
 if __name__=="__main__":
     dc_path = 'C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/full_recalc_jul_24/recalc_files/'
     #recalc_path can be a list of multiple paths
@@ -169,10 +120,13 @@ if __name__=="__main__":
 
     shp_in = geopandas.read_file(shp_path, crs='ESPG:4326')   
     
-    area_name = 'Wimmera'
-    area_in = shp_in[shp_in['Area_Name']==area_name]
+    area_name = 'Mallee'
+    #Get the regional template grid for defining each area:
+    map_by_pixel_in = xr.open_dataset("C:/Users/clark/analysis1/afdrs_fbi_recalc-main/data/template_nc_grids/map_by_pixel_centroid_FWA_1500m.nc")
+    map_by_pixel = map_by_pixel_in['Area_Name'].where(map_by_pixel_in['Area_Name']==area_name)
+
     #Set dates:
-    dates_ = pd.date_range(datetime(2017,10,1), datetime(2017,11,1), freq='D')
+    dates_ = pd.date_range(datetime(2017,10,1), datetime(2022,6,1), freq='D')
     #dates_ = pd.date_range(datetime(2020,4,4), datetime(2020,4,4), freq='D')
 
     #Get a list of the dates actually in the range by checking all the daily files are there.
@@ -181,11 +135,11 @@ if __name__=="__main__":
         date_str = dt.strftime("%Y%m%d")
         if Path(dc_path+'VIC_'+date_str+'_recalc.nc').is_file():
                 dates_used.append(dt)
-    replace_fuel_calc_rating(dc_path, recalc_path, dates_used[0], area_in, path_to_fuel_lut_orig, path_to_fuel_lut_recalc)
+    replace_fuel_calc_rating(dc_path, recalc_path, dates_used[0], map_by_pixel, path_to_fuel_lut_orig, path_to_fuel_lut_recalc)
     
     pool = mp.Pool(12)
     start_time = time.time()
-    results_pool = [pool.apply_async(replace_fuel_calc_rating, args=(dc_path, recalc_path, dt, area_in, path_to_fuel_lut_orig, path_to_fuel_lut_recalc)) for dt in dates_used]    
+    results_pool = [pool.apply_async(replace_fuel_calc_rating, args=(dc_path, recalc_path, dt, map_by_pixel, path_to_fuel_lut_orig, path_to_fuel_lut_recalc)) for dt in dates_used]    
     pool.close()
     pool.join()
     results_list_ = [r.get() for r in results_pool]
