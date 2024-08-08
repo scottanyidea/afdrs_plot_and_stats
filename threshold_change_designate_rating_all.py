@@ -1,5 +1,5 @@
-#Replaces one or multiple fuel types in the historical (datacube) with recalculated FBI thresholds
-#based on one of its variables.
+#Recalculates the FBI and rating for a single fuel type based on a user-chosen new set of
+#thresholds, for all districts in a chosen set of boundaries.
 
 #This is a faster method than "replace_fueltype_changes" since we don't need to recalculate
 #the ratings using new fuel parameters, it's just using the existing outputs to calculate
@@ -81,7 +81,7 @@ def threshold_change_calc_rating(data_path, date_in, area_mask, fuel_lut_pth_ori
             
             #Choose the variable we want to apply thresholds to - with mask applied:
             variable_to_calc_fbi = official_file_in['intensity'].where(code_mask).max(dim='time', skipna=True, keep_attrs=True).values
-            thresholds = [0, 100, 750, 4000, 20000, 40000]
+            thresholds = [0, 500, 2500, 10000, 20000, 40000]
             var_max_ = 90000
             
             #Need to work out how to collapse to 1D before back to 2D using the mask.. no idea...
@@ -190,4 +190,4 @@ if __name__=="__main__":
         end_time = time.time()
         print('Time taken for this region: '+str(round(end_time-start_time, 3)))
 
-    fbi_and_rating_changes.to_csv("C:/Users/clark/analysis1/datacube_daily_stats/version_jul24/changes/fwd/fbi_changes_malleethresh.csv")
+    fbi_and_rating_changes.to_csv("C:/Users/clark/analysis1/datacube_daily_stats/version_jul24/changes/fwd/fbi_changes_malleethresh3.csv")
