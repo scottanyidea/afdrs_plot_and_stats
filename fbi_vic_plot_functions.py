@@ -29,9 +29,20 @@ def plot_and_compare_fbi(max_fbi1, max_fbi2, areas_shapefile, extent, save_plot=
     
     fig, axs = plt.subplots(1,3,figsize=(12,6), subplot_kw={'projection': ccrs.PlateCarree()})
 
-    max_fbi1.plot(ax=axs[0], transform=ccrs.PlateCarree(),vmin=0., vmax=50., cmap='viridis')
+    cmap_rating = pltcolors.ListedColormap(['white','green','gold','darkorange','darkred'])
+    #    norm = pltcolors.BoundaryNorm([0,1,2,3,4,5], cmap_rating.N)
+    norm = pltcolors.BoundaryNorm([0,12,24,50,100,200], cmap_rating.N)
+
+    im1 = max_fbi1.plot(ax=axs[0], transform=ccrs.PlateCarree(),cmap=cmap_rating, norm=norm, add_colorbar=False)
+    cb1 = plt.colorbar(im1, orientation='vertical', fraction=0.035)
+#    cb1.set_label(label='FBI',size=14)
+    cb1.ax.tick_params(labelsize=14)
     areas_shapefile.plot(ax=axs[0], facecolor="none")
-    max_fbi2.plot(ax=axs[1], transform=ccrs.PlateCarree(), vmin=0., vmax=50., cmap='viridis')
+    im2 = max_fbi2.plot(ax=axs[1], transform=ccrs.PlateCarree(), cmap=cmap_rating, norm=norm, add_colorbar=False)
+    cb2 = plt.colorbar(im2, orientation='vertical', fraction=0.035)
+#    cb2.set_label(label='Maximum FBI in day',size=14)
+    cb2.ax.tick_params(labelsize=14)
+    
     areas_shapefile.plot(ax=axs[1], facecolor="none")
     axs[0].coastlines()
     axs[0].set_title('FBI 1')
@@ -47,12 +58,14 @@ def plot_and_compare_fbi(max_fbi1, max_fbi2, areas_shapefile, extent, save_plot=
 #    axs[1].set_extent([140.8,144.7,-37.3,-34.2])
 
     """Calc difference and plot"""
-    difference_fbi = max_fbi1 - max_fbi2
+    difference_fbi = max_fbi2 - max_fbi1
     
-    difference_fbi.plot(ax=axs[2], transform=ccrs.PlateCarree(),vmin=-10., vmax=10., cmap='RdYlGn_r')
+    im3 = difference_fbi.plot(ax=axs[2], transform=ccrs.PlateCarree(),vmin=-20., vmax=20., cmap='RdYlGn_r', add_colorbar=False)
+    cb3 = plt.colorbar(im3, orientation='vertical', fraction=0.035)
+    cb3.ax.tick_params(labelsize=14)
     areas_shapefile.plot(ax=axs[2], facecolor="none")
     axs[2].coastlines()
-    axs[2].set_title('Diff recalc - BOM')
+    axs[2].set_title('Diff 2 - 1')
     axs[2].gridlines(draw_labels=False)
 #    axs[2].set_extent([140.8,144.7,-37.0,-33.8])
     axs[2].set_extent(extent)
@@ -242,7 +255,7 @@ def plot_df(df, areas_shapefile, extent, save_plot=None):
     areas_shapefile.plot(ax=axs, facecolor="none")
 
     axs.coastlines()
-    axs.set_title('Drought factor', fontsize=20)
+    axs.set_title('Drought factor 16 Nov 2024', fontsize=20)
     axs.set_xticks([142,144,146,148,150], crs=ccrs.PlateCarree())
     axs.set_yticks([-38,-36,-34], crs=ccrs.PlateCarree())
 #    axs[0].set_extent([140.8,144.7,-37.3,-34.2])
@@ -257,19 +270,62 @@ def plot_df(df, areas_shapefile, extent, save_plot=None):
     if save_plot is not None:
         plt.savefig(save_plot+'.png')
 
+def plot_kbdi(kbdi, areas_shapefile, extent, save_plot=None):
+    """
+    Plot KBDI on a single plot.
+
+    Parameters
+    ----------
+    df (xarray DataArray) : KBDI array, must be 2-dimensional with lat and lon coordinate variables.
+    areas_shapefile (geopandas object): Shapefile that contains sub-regions that will be plotted as outlines overlaying
+    the FBI data.
+    save_plot (string, optional) : Name to save the plot. 
+
+    Returns
+    -------
+    No output arguments. Option to save plot as a PNG with the name given by save_plot.
+
+    """
+    
+    fig, axs = plt.subplots(1,figsize=(8,8), subplot_kw={'projection': ccrs.PlateCarree()})
+    cmap_df = pltcolors.ListedColormap(['blue','royalblue','darkturquoise','aquamarine','springgreen','gold','darkorange','red','darkred'])
+#    norm = pltcolors.BoundaryNorm([0,1,2,3,4,5,6,7,8,9,10,10.1], cmap_df.N)
+    norm = pltcolors.BoundaryNorm([10,20,30,40,50,75,100,150,200], cmap_df.N, extend='max')
+    
+    im1 = kbdi.plot(ax=axs, transform=ccrs.PlateCarree(), cmap=cmap_df, norm=norm, add_colorbar=False)
+    cb1 = plt.colorbar(im1, orientation='vertical', fraction=0.03)
+    cb1.set_label('KBDI', size=16)
+    cb1.ax.tick_params(labelsize=16)
+    areas_shapefile.plot(ax=axs, facecolor="none")
+
+    axs.coastlines()
+    axs.set_title('KBDI', fontsize=20)
+    axs.set_xticks([142,144,146,148,150], crs=ccrs.PlateCarree())
+    axs.set_yticks([-38,-36,-34], crs=ccrs.PlateCarree())
+#    axs[0].set_extent([140.8,144.7,-37.3,-34.2])
+#    axs.set_extent([140.8,145.7,-39,-33.8])   #Wimmera + SW
+#    axs.set_extent([142.8,145.7,-39,-36.3]) #Melbourne and a little west and north... 
+#    axs.set_extent([147.0,150,-38.1,-36.4])   #East Gippsland
+    axs.set_extent(extent)   #East Gippsland
+    axs.set_xlabel('')
+    axs.set_ylabel('')
+
+    if save_plot is not None:
+        plt.savefig(save_plot+'.png')
+
 def plot_fbi_and_fdi(fbi, fdi, areas_shapefile, extent, save_plot=None):
     fig, axs = plt.subplots(1,2,figsize=(12,6), subplot_kw={'projection': ccrs.PlateCarree()})
 
     cmap_rating = pltcolors.ListedColormap(['white','green','gold','darkorange','darkred'])
     norm = pltcolors.BoundaryNorm([0,12,24,50,100,200], cmap_rating.N)
-#    im1= fbi.plot(ax=axs[0], transform=ccrs.PlateCarree(), cmap=cmap_rating, norm=norm, add_colorbar=False)
-    im1= fbi.plot(ax=axs[0], transform=ccrs.PlateCarree(), cmap='viridis',add_colorbar=False)
+    im1= fbi.plot(ax=axs[0], transform=ccrs.PlateCarree(), cmap=cmap_rating, norm=norm, add_colorbar=False)
+#    im1= fbi.plot(ax=axs[0], transform=ccrs.PlateCarree(), cmap='viridis',add_colorbar=False)
     cb1 = plt.colorbar(im1, orientation='vertical', fraction=0.04)
     cb1.set_label(label='FBI',size=16)
     cb1.ax.tick_params(labelsize=16)
     areas_shapefile.plot(ax=axs[0], facecolor="none")
-#    im2 = fdi.plot(ax=axs[1], transform=ccrs.PlateCarree(), vmin=0., vmax=50., cmap='viridis', add_colorbar=False)
-    im2 = fdi.plot(ax=axs[1], transform=ccrs.PlateCarree(), cmap=cmap_rating, norm=norm, add_colorbar=False)
+    im2 = fdi.plot(ax=axs[1], transform=ccrs.PlateCarree(), vmin=0., vmax=100., cmap='viridis', add_colorbar=False)
+#    im2 = fdi.plot(ax=axs[1], transform=ccrs.PlateCarree(), cmap=cmap_rating, norm=norm, add_colorbar=False)
     cb2 = plt.colorbar(im2, orientation='vertical', fraction=0.04)
     cb2.set_label(label='FDI',size=16)
     cb2.ax.tick_params(labelsize=16)
@@ -544,6 +600,40 @@ def plot_curing(curing, areas_shapefile, save_plot=None):
     axs.set_xlabel('')
     axs.set_ylabel('')
     
+    
+    if save_plot is not None:
+        plt.savefig(save_plot+'.png')
+
+
+def plot_fmc(fmc_in, areas_shapefile, extent, save_plot=None):
+    """
+    Plot two FBI cases and a comparison plot from xarray DataArrays with lat and lon
+    coordinate variables. Ie. three panels.
+
+    Parameters
+    ----------
+    max_fbi1 (xarray DataArray) : FBI array 1, must be 2-dimensional with lat and lon coordinate variables.
+    max_fbi2 (xarray DataArray): FBI array 2 that we want to compare.
+    areas_shapefile (geopandas object): Shapefile that contains sub-regions that will be plotted as outlines overlaying
+    the FBI data.
+    save_plot (string, optional) : Name to save the plot. 
+
+    Returns
+    -------
+    No output arguments. Saves plot as a PNG with the name given by save_plot.
+
+    """
+    
+    fig, axs = plt.subplots(1,1,figsize=(8,8), subplot_kw={'projection': ccrs.PlateCarree()})
+
+    fmc_in.plot(ax=axs[0], transform=ccrs.PlateCarree(),vmin=0., vmax=0.3, cmap='viridis')
+    areas_shapefile.plot(ax=axs[0], facecolor="none")
+    axs.coastlines()
+    axs.set_title('FBI 1')
+    axs.set_xticks([142,144,146,148,150], crs=ccrs.PlateCarree())
+    axs.set_yticks([-38,-36,-34], crs=ccrs.PlateCarree())
+#    axs[0].set_extent([140.8,144.7,-37.3,-34.2])
+    axs.set_extent(extent)
     
     if save_plot is not None:
         plt.savefig(save_plot+'.png')
