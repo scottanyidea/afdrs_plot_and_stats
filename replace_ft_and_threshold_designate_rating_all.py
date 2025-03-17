@@ -114,15 +114,15 @@ def replace_fuel_calc_rating(original_path, newdata_paths, date_in, area_mask, f
 
     
 if __name__=="__main__":
-    dc_path = 'C:/Users/clark/analysis1/afdrs_fbi_recalc/Recalculated_VIC_Grids/full_recalc_jul_24/recalc_files/'
+    dc_path = 'C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/full_recalc_jul_24/recalc_files/'
     #recalc_path can be multiple paths for multiple changes
-    recalc_path = ['C:/Users/clark/analysis1/afdrs_fbi_recalc/Recalculated_VIC_Grids/mallee_threshold_and_18OC/recalc_files/']
+    recalc_path = ['C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/mallee_threshold_changes/recalc_files/']
 
-    path_to_fuel_lut_orig = "C:/Users/clark/analysis1/afdrs_fbi_recalc/data/fuel/fuel-type-model-authorised-vic-20231012043244.csv"
-    path_to_fuel_lut_recalc = "C:/Users/clark/analysis1/afdrs_fbi_recalc/data/fuel/fuel-type-model-authorised-vic-20231012043244.csv"
+    path_to_fuel_lut_orig = "C:/Users/clark/analysis1/afdrs_fbi_recalc-main/data/fuel/fuel-type-model-authorised-vic-20231012043244.csv"
+    path_to_fuel_lut_recalc = "C:/Users/clark/analysis1/afdrs_fbi_recalc-main/data/fuel/fuel-type-model-authorised-vic-20231012043244.csv"
 
     #Get the regional template grid for defining each area:
-    map_by_pixel_in = xr.open_dataset("C:/Users/clark/analysis1/afdrs_fbi_recalc/data/template_nc_grids/map_by_pixel_centroid_FWA_1500m.nc")
+    map_by_pixel_in = xr.open_dataset("C:/Users/clark/analysis1/afdrs_fbi_recalc-main/data/template_nc_grids/map_by_pixel_centroid_FWA_1500m.nc")
     area_name_list = np.unique(map_by_pixel_in['Area_Name'])
     area_name_list = area_name_list[area_name_list!='']
     
@@ -165,4 +165,4 @@ if __name__=="__main__":
         end_time = time.time()
         print('Time taken for this region: '+str(round(end_time-start_time, 3)))
 
-    fbi_and_rating_changes.to_csv("C:/Users/clark/analysis1/datacube_daily_stats/version_jul24/changes/fwd/fbi_mallee_OC18_oct24.csv")
+    fbi_and_rating_changes.to_csv("C:/Users/clark/analysis1/datacube_daily_stats/version_jul24/changes/fwd/fbi_malleethresh_rfs.csv")
