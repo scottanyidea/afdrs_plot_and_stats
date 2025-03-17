@@ -1,6 +1,10 @@
 """
 Calculate FBI from AWS data that has been compiled from an archive.
 This allows one to specify the fuel type model used.
+
+To use: - only need to change the obs table used in table_in, and ensure the fuel
+lut is up to date. Can use multiple fuel sub-types for comparison, just add to the
+list at fuel_type_.
 """
 import os
 import pandas as pd
@@ -17,7 +21,7 @@ if __name__=="__main__":
 #    table_in = pd.read_csv("C://Users/clark/OneDrive - Country Fire Authority/Documents - Fire Risk, Research & Community Preparedness - RD private/Active Projects/AFDRS Research - Eval/EVALUATION TASKS/FDI_FBIforPDD/PDD22_23/vic_aws_mar23_apr23.csv",
 #                           dtype={'Station_full': 'str', 'Station_desc': 'str', 'Primary FBM': 'str', 'Secondary FBM': 'str'},
 #                           parse_dates=['time'], date_format='%Y-%m-%d %H:%M:%S')
-    table_in = pd.read_csv("C://Users/clark/analysis1/compiled_obs/compiled_obs_westernvic_20241117.csv",
+    table_in = pd.read_csv("C://Users/clark/analysis1/compiled_obs/compiled_obs_statesample_20250203-20250204.csv",
                            dtype={'station_full': 'str', 'station_desc': 'str', 'primary FBM': 'str', 'secondary FBM': 'str'},
                            parse_dates=['time'], date_format='%Y-%m-%d %H:%M:%S')
 #    table_in = table_in[table_in['station_full']=='MALLACOOTA']
@@ -27,10 +31,10 @@ if __name__=="__main__":
     default_grass_cond = 2
     
     #Get fuel lookup table and set fuel types we want to calculate:
-#    fuel_lut = pd.read_csv("C:/Users/clark/analysis1/afdrs_fbi_recalc-main/data/fuel/fuel-type-model-authorised-vic-20231214033606.csv")
-    fuel_lut = pd.read_csv("C:/Users/clark/analysis1/afdrs_fbi_recalc/data/fuel/fuel-type-model-authorised-vic-generic.csv")
+    fuel_lut = pd.read_csv("C:/Users/clark/analysis1/afdrs_fbi_recalc/data/fuel/fuel-type-model-authorised-vic-20240920010337.csv")
+#    fuel_lut = pd.read_csv("C:/Users/clark/analysis1/afdrs_fbi_recalc/data/fuel/fuel-type-model-authorised-vic-generic.csv")
     fuel_type_table = pd.read_excel("C:/Users/clark/analysis1/afdrs_fbi_recalc/data/fuel/obs_station_fuel_types_VIC.xlsx")
-    fuel_type_ = [4000]
+    fuel_type_ = [3066, 3024, 3046, 3025]
 
     #Output table same as in... plus some columns to be calculated.
     table_out = table_in
@@ -56,7 +60,7 @@ if __name__=="__main__":
                 curing = table_in['curing'].values,
                 grass_fuel_load = table_in['grass fuel load'].values,
                 precip = table_in['accum precip'].values,
-                time_since_rain = np.full(len(table_in), np.nan),
+                time_since_rain = np.full(len(table_in), 48),
                 time_since_fire = np.full(len(table_in), 25),
                 ground_moisture = np.full(len(table_in), np.nan),
                 fuel_type = np.full(len(table_in), ft),
@@ -68,7 +72,8 @@ if __name__=="__main__":
 
         #Get FBI, rate of spread and intensity for now. Maybe we want others later??
         table_out['FBI_'+str(ft)] = calculated_fdrs_output_np_arr['index_1']
-        
+        table_out['ROS_'+str(ft)] = calculated_fdrs_output_np_arr['rate_of_spread']
+    
     """
     
     #OK we want FFDI and GFDI too. Let's calculate those.
@@ -101,9 +106,9 @@ if __name__=="__main__":
                                   'Curing': 'curing', 'Grass Fuel Load': 'grass fuel load'})
     table_out = table_out.drop(columns=['Unnamed: 0','station_desc'])
     #table_out.to_csv("C://Users/clark/OneDrive - Country Fire Authority/Documents - Fire Risk, Research & Community Preparedness - RD private/Active Projects/AFDRS Research - Eval/EVALUATION TASKS/FDI_FBI comparison for PDD/PDD22_23/vic_aws_mar23_apr23_fdis.csv", index=False)
-    table_out.to_csv("C:/Users/clark/analysis1/compiled_obs/obs_20241116_otways_ffdi.csv")
+    table_out.to_csv("C:/Users/clark/analysis1/compiled_obs/obs_statesample_20250203-20250204_fdis.csv")
     #Calculate also the maximums throughout the day.
     #TODO: Fix this by sorting by FBI then grouping by station. At the moment
     #this takes just the maximum of each column. Or... is this really what we want???
     table_out_max = table_out.groupby('station_full', as_index=False).max('Primary FBI')
-    table_out_max.to_csv('C:/Users/clark/analysis1/compiled_obs/obs_20241116_otways_ffdi_maximums.csv', index=False)
+    table_out_max.to_csv('C:/Users/clark/analysis1/compiled_obs/obs_statesample_20250203-20250204_fdismax.csv', index=False)

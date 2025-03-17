@@ -196,7 +196,6 @@ if __name__=="__main__":
     for dt in dates_:
         date_str = dt.strftime("%Y%m%d")
         if Path(fbi_data_path+'VIC_'+date_str+'_recalc.nc').is_file():
-#        if Path(fbi_data_path+'VIC_'+date_str+'_recalc.nc').is_file():
             dates_used.append(dt)
     
     #Filter down to desired FWA. #EPSG:4326 corresponds to WGS 1984 CRS

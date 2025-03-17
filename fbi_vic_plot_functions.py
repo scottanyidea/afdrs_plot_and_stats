@@ -255,7 +255,7 @@ def plot_df(df, areas_shapefile, extent, save_plot=None):
     areas_shapefile.plot(ax=axs, facecolor="none")
 
     axs.coastlines()
-    axs.set_title('Drought factor 16 Nov 2024', fontsize=20)
+    axs.set_title('Drought factor 4 Feb 2025', fontsize=20)
     axs.set_xticks([142,144,146,148,150], crs=ccrs.PlateCarree())
     axs.set_yticks([-38,-36,-34], crs=ccrs.PlateCarree())
 #    axs[0].set_extent([140.8,144.7,-37.3,-34.2])
@@ -270,7 +270,7 @@ def plot_df(df, areas_shapefile, extent, save_plot=None):
     if save_plot is not None:
         plt.savefig(save_plot+'.png')
 
-def plot_kbdi(kbdi, areas_shapefile, extent, save_plot=None):
+def plot_kbdi(kbdi, areas_shapefile, extent, save_plot=None, plt_title=None):
     """
     Plot KBDI on a single plot.
 
@@ -299,7 +299,8 @@ def plot_kbdi(kbdi, areas_shapefile, extent, save_plot=None):
     areas_shapefile.plot(ax=axs, facecolor="none")
 
     axs.coastlines()
-    axs.set_title('KBDI', fontsize=20)
+    if plt_title is not None:
+        axs.set_title(plt_title, fontsize=20)
     axs.set_xticks([142,144,146,148,150], crs=ccrs.PlateCarree())
     axs.set_yticks([-38,-36,-34], crs=ccrs.PlateCarree())
 #    axs[0].set_extent([140.8,144.7,-37.3,-34.2])
@@ -493,7 +494,7 @@ def plot_fbi_gfdi_cheney_ratings(fbi, gfdi, cheney_fdi, areas_shapefile, extent,
         plt.savefig(save_plot+'.png')
 
 def plot_varpanel(temp, rh, wind, df, areas_shapefile, extent, save_plot=None):
-    fig, axs = plt.subplots(2,2,figsize=(11,8), subplot_kw={'projection': ccrs.PlateCarree()})
+    fig, axs = plt.subplots(2,2,figsize=(10,8), subplot_kw={'projection': ccrs.PlateCarree()})
     
     cmap_temp = mpl.cm.jet
     norm = pltcolors.BoundaryNorm([10,15,20,25,30,35,40,45], cmap_temp.N)
@@ -511,7 +512,7 @@ def plot_varpanel(temp, rh, wind, df, areas_shapefile, extent, save_plot=None):
     axs[0,0].set_ylabel('')
 
     cmap_rh = mpl.cm.gist_earth_r
-    norm = pltcolors.BoundaryNorm([5,10,15,20,30,40,50,60], cmap_rh.N)
+    norm = pltcolors.BoundaryNorm([5,10,15,20,25,30,40,50,60], cmap_rh.N)
     im2 = rh.plot(ax=axs[0,1], transform=ccrs.PlateCarree(), cmap=cmap_rh, norm=norm, add_colorbar=False)
     cb2 = plt.colorbar(im2, orientation='vertical', fraction=0.036)
     cb2.set_label('RH', size=16)
@@ -527,7 +528,7 @@ def plot_varpanel(temp, rh, wind, df, areas_shapefile, extent, save_plot=None):
 
 
     cmap_wind= mpl.cm.BuPu
-    norm = pltcolors.BoundaryNorm([10,20,30,40,50,60], cmap_wind.N)
+    norm = pltcolors.BoundaryNorm([10,20,25,30,40,50,60], cmap_wind.N)
     im3 = wind.plot(ax=axs[1,0], transform=ccrs.PlateCarree(), cmap=cmap_wind, norm=norm, add_colorbar=False)
     cb3 = plt.colorbar(im3, orientation='vertical', fraction=0.036)
     cb3.set_label('Wind (km/h)', size=16)
@@ -560,7 +561,7 @@ def plot_varpanel(temp, rh, wind, df, areas_shapefile, extent, save_plot=None):
         plt.savefig(save_plot+'.png')
         
 
-def plot_curing(curing, areas_shapefile, save_plot=None):
+def plot_curing(curing, areas_shapefile, extent, save_plot=None):
     """
     Plot grass curing on a single plot.
 
@@ -576,6 +577,8 @@ def plot_curing(curing, areas_shapefile, save_plot=None):
     No output arguments. Option to save plot as a PNG with the name given by save_plot.
 
     """
+    
+    
     
     fig, axs = plt.subplots(1,figsize=(8,8), subplot_kw={'projection': ccrs.PlateCarree()})
 #    cmap_c = pltcolors.ListedColormap(['mediumblue','blue','royalblue','cornflowerblue','darkturquoise','aquamarine','springgreen','gold','darkorange','red','darkred'])
@@ -595,7 +598,7 @@ def plot_curing(curing, areas_shapefile, save_plot=None):
     axs.set_xticks([142,144,146,148,150], crs=ccrs.PlateCarree())
     axs.set_yticks([-38,-36,-34], crs=ccrs.PlateCarree())
 #    axs[0].set_extent([140.8,144.7,-37.3,-34.2])
-    axs.set_extent([140.8,145.7,-39,-33.8])   #Wimmera + SW
+    axs.set_extent(extent)   #Wimmera + SW
  
     axs.set_xlabel('')
     axs.set_ylabel('')

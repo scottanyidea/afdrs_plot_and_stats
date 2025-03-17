@@ -15,7 +15,7 @@ from shapely.geometry import mapping, Point
 
 def plot_fbi_points_in_fire(FBI,areas_shapefile):
     fig, axs = plt.subplots(figsize=(10,10), subplot_kw={'projection': ccrs.PlateCarree()})
-    colors=['blue', 'purple', 'lightgreen']
+    colors=['blue', 'red', 'brown', 'yellow', 'lightgreen']
     
     unique_models = np.unique(FBI['FBM'])
     k=0
@@ -25,23 +25,23 @@ def plot_fbi_points_in_fire(FBI,areas_shapefile):
         im1 = table_sub.plot(ax=axs, transform=ccrs.PlateCarree(),marker='o', color=colors[k], markersize=50, label=model_type)
 #        for x, y, indx in zip(table_sub.longitude, table_sub.latitude, table_sub.index_1):
         for x, y, indx in zip(table_sub.longitude, table_sub.latitude, table_sub.fuel_type):
-            axs.text(x, y, int(indx), fontsize=18)
+            axs.text(x, y, int(indx), fontsize=12)
         
         k=k+1
-    axs.legend(fontsize=18)
+    axs.legend(fontsize=16)
 
     plt.savefig('briagolong_1oct_fueltypes.png')
     
     
 if __name__=="__main__":
     #Set dates:
-        year_sel_ = 2023
-        mon_sel = 9
-        day_sel = 30
+        year_sel_ = 2025
+        mon_sel = 1
+        day_sel = 27
 
         datetime_sel = datetime(year_sel_, mon_sel, day_sel)
 
-        forecast_day = 1  
+        forecast_day = 0
         datetime_fc = datetime_sel + timedelta(days=forecast_day)
     
         #set strings here - bit of a mess but helps later!
@@ -55,14 +55,14 @@ if __name__=="__main__":
 
 
         #load the file:
-        recalc_file_in = xr.open_dataset("C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/cases_control/VIC_"+str(year_sel_)+mon_sel_str+day_sel_str+"_recalc.nc")
+        recalc_file_in = xr.open_dataset("C:/Users/clark/analysis1/afdrs_fbi_recalc/Recalculated_VIC_Grids/cases_control/VIC_"+str(year_sel_)+mon_sel_str+day_sel_str+"_recalc.nc")
         """
         Find the maximum FBI and FDI at each point: 
         Note - there is a need to grab the correct time window, midnight to midnight LOCAL time.    
         """
         start_time_ = np.datetime64(str(year_sel_)+'-'+mon_sel_str_fc+'-'+day_sel_str_fc+'T13:00:00')
         end_time_ = np.datetime64(str(year_sel_)+'-'+mon_sel_str_fcplus1+'-'+day_sel_str_fcplus1+'T12:00:00')
-#        start_ind=12
+        start_ind=2
         start_ind = np.where(recalc_file_in.time.values==start_time_)[0][0]
         end_ind = np.where(recalc_file_in.time.values==end_time_)[0][0]
         max_recalc_fbi = recalc_file_in['index_1'][start_ind:end_ind,:,:].max(dim='time', keep_attrs=True)
@@ -73,12 +73,9 @@ if __name__=="__main__":
         fuel_types = recalc_file_in['fuel_type'][12,:,:]
         
         """Load shapefile for plotting"""
-#        shp_in = geopandas.read_file("C:/Users/clark/analysis1/Case_studies/2024_02_22/shapefiles/Obs_20240222_1959/Obs_area.shp")
-#        shp_in = geopandas.read_file("C:/Users/clark/analysis1/Case_studies/2024_02_22/shapefiles/Obs_20240223_1959/Obs_area.shp")
-#        shp_in = geopandas.read_file("C:/Users/clark/analysis1/Case_studies/2024_03_26/Obs_20240328_0859/Obs_area.shp")
-        shp_in = geopandas.read_file("C:/Users/clark/analysis1/Case_studies/2023_10_02/Obs_20231002_1159/Obs_area.shp")
-#        shp_in_subset = shp_in[shp_in['DSE_ID']==999213]
-        shp_in_subset = shp_in[shp_in['CFA_ID']==1961458]
+        shp_in = geopandas.read_file("C:/Users/clark/analysis1/Case_studies/2025_01_27/shapefiles/Obs_20250127_2059/Obs_area.shp")
+        shp_in_subset = shp_in[shp_in['DSE_ID']==1003542]
+#        shp_in_subset = shp_in[shp_in['CFA_ID']==1961458]
         #The polygon gives weird coordinates. Turns out it's just in a projected coordinate system, 
         #gotta change it to a geographic reference system. So convert to 4326 (WGS 84)
         shp_in_subset = shp_in_subset.to_crs(4326)
@@ -92,7 +89,7 @@ if __name__=="__main__":
         #convert to pd dataframe:
         fbi_table_ = clipped_recalc_ft.to_dataframe().dropna(subset='index_1')
         #load fuel lut for mapping on fuel categories:
-        path_to_fuel_lut_ = "C:/Users/clark/analysis1/afdrs_fbi_recalc-main/data/fuel/fuel-type-model-authorised-vic-20231214033606.csv"
+        path_to_fuel_lut_ = "C:/Users/clark/analysis1/afdrs_fbi_recalc/data/fuel/fuel-type-model-authorised-vic-20240920010337.csv"
         fuel_lut_ = pd.read_csv(path_to_fuel_lut_)
         fuel_FBM_dict = pd.Series(fuel_lut_.FBM.values,index=fuel_lut_.FTno_State).to_dict()
         fbi_table_['FBM'] = fbi_table_['fuel_type'].map(fuel_FBM_dict)

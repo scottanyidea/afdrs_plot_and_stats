@@ -11,12 +11,12 @@ from shapely.geometry import mapping
 import pandas as pd
 
 #load an FBI recalc file. any one that has all fuel types in it.
-fbi_data = xr.open_dataset('C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/full_recalc_jan_24/recalc_files/VIC_20180202_recalc.nc')
+fbi_data = xr.open_dataset('C:/Users/clark/analysis1/afdrs_fbi_recalc/Recalculated_VIC_Grids/full_recalc_jul_24/recalc_files/VIC_20180202_recalc.nc')
 #fbi_data = xr.open_dataset('C:/Users/clark/analysis1/afdrs_fbi_recalc-main/Recalculated_VIC_Grids/cases_control/VIC_20240124_recalc.nc')
 fuel_type_map = fbi_data['fuel_type'][1,:,:]
 
 #load template file:
-template_in = xr.open_dataset("C:/Users/clark/analysis1/afdrs_fbi_recalc-main/data/template_nc_grids/map_by_pixel_centroid_PDD_1500m.nc")
+template_in = xr.open_dataset("C:/Users/clark/analysis1/afdrs_fbi_recalc/data/template_nc_grids/map_by_pixel_centroid_DEECA_1500m.nc")
 
 #merge:
 data_in_frame = xr.merge([fuel_type_map, template_in]).to_dataframe()
@@ -41,7 +41,7 @@ fuel_type_dict['3066 Little Desert forest'] = [3066]
 #Set up pandas dataframe to save the values.
 df_out = pd.DataFrame(list(fuel_type_dict.keys()), columns=['Fuel_type'])
 
-data_in_frame = data_in_frame.dropna(subset=['Area_Id'])
+#data_in_frame = data_in_frame.dropna(subset=['Area_Id'])
 region_list = data_in_frame['Area_Name'].unique()
 region_list.sort()
 
@@ -62,5 +62,5 @@ for reg in region_list:
     df_out[reg] = no_pixels_in_type/pixels_total
     
 #Save dataframe:
-#df_out.to_csv("C:/Users/clark/analysis1/afdrs_fbi_recalc-main/fuel_type_frac_wimmera.csv", index=False)
-df_out.to_csv("C:/Users/clark/OneDrive - Country Fire Authority/analysis_results/fuel_type_fracs_tables/fuel_type_frac_by_pdd_1500m_centroid_feb24.csv", index=False)
+df_out.to_csv("C:/Users/clark/analysis1/afdrs_fbi_recalc/data/fuel_type_frac_deeca.csv", index=False)
+#df_out.to_csv("C:/Users/clark/OneDrive - Country Fire Authority/analysis_results/fuel_type_fracs_tables/fuel_type_frac_by_pdd_1500m_centroid_feb24.csv", index=False)
