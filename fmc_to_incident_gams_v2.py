@@ -7,7 +7,8 @@ import pandas as pd
 import geopandas
 from datetime import datetime
 import matplotlib.pyplot as plt
-from pygam import LogisticGAM, GammaGAM, LinearGAM, ExpectileGAM, GAM, s, te
+import matplotlib.colors as pltcolors
+from pygam import LogisticGAM, GammaGAM, LinearGAM, ExpectileGAM, PoissonGAM, GAM, s, te
 from mpl_toolkits import mplot3d
 from shapely.geometry import mapping, Polygon
 import rioxarray
@@ -44,25 +45,33 @@ def pseudo_rsq(gam_model, gam_null, X, y):
     #NOTE: The null log likelihood must take only 1s as input for X. 
     
     log_lik_model = gam_model.loglikelihood(X, y)
-    log_lik_null = gam_null.loglikelihood(np.full(len(X), 1).reshape(-1,1),y)
+    log_lik_null = gam_null.loglikelihood(np.full(len(X),1).reshape(-1,1),y)
     
     return 1-(log_lik_model/log_lik_null)
+
+#%%
 
 if __name__=="__main__":
     #FIRST STEP: Load all incident and area data, and merge for first hurdle model.
     
     #Load incident database:
-    incidents_in = pd.read_pickle("C:/Users/clark/analysis1/incidents_filtered_with_fmc_curing.pkl")
+    incidents_in = pd.read_pickle("C:/Users/clark/analysis1/incidents_filtered_with_fmc_curing_2003-2020.pkl")
+#    incidents_in = pd.read_pickle("C:/Users/clark/analysis1/incidents_filtered_with_fmc_curing.pkl")
     #Instead - try new filter to count more incidents:
     #Incident type is "grass", and either relevant fire flag >0 or comments include "grass".
     #incidents_in = incidents_in[(incidents_in['incident_type']=="Grass") & ((incidents_in['relevant_fire_flags']>0) | (incidents_in['comments'].str.contains('GRASS')))]
 
+    #Let's try some additional filtering.
+#    incidents_in = incidents_in[(incidents_in['spreading_fire_flags']>=1) & (incidents_in['text_score']>=0)]
+#    incidents_in = incidents_in[(incidents_in['spreading_fire_flags']>=1)]
+    
     #Trim to timeframe:
-    start_date = datetime(2008,4,1)
+    start_date = datetime(2003,4,1)
     end_date = datetime(2020,6,30)
     
     incidents_subset = incidents_in[(incidents_in['reported_time']>=start_date) & (incidents_in['reported_time']<=end_date)]
-    incidents_subset = incidents_subset[['season', 'incident_type', 'reported_time', 'containment_time_hr', 'fire_area_ha', 'latitude', 'longitude', 'point', 'geometry', 'relevant_fire_flags', 'AM60_moisture', 'Curing_%', 'Wind']]
+    #incidents_subset = incidents_subset[['season', 'incident_type', 'reported_time', 'containment_time_hr', 'fire_area_ha', 'latitude', 'longitude', 'point', 'geometry', 'relevant_fire_flags', 'AM60_moisture', 'Curing_%', 'Wind']]
+    incidents_subset = incidents_subset[['season', 'fuel_type', 'reported_time', 'containment_time_hr', 'fire_area_ha', 'latitude', 'longitude', 'point', 'geometry', 'spreading_fire_flags', 'AM60_moisture', 'Curing_%', 'Wind']]
     incidents_subset['reported_date'] = pd.to_datetime(incidents_subset['reported_time'].dt.date)
     
     #further filtering needed:
@@ -91,7 +100,7 @@ if __name__=="__main__":
     incidents_total_ha = incidents_subset.groupby(['reported_date', 'Area_Name'])[['fire_area_ha', 'containment_time_hr']].sum()
     
     #Load moisture data:
-    moisture_min_data = pd.read_csv('C://Users/clark/analysis1/incidents_fmc_data/mcarthur_canemc_grass_min_FWD_3.csv', index_col=0)
+    moisture_min_data = pd.read_csv('C://Users/clark/analysis1/incidents_fmc_data/mcarthur_canemc_grass_min_FWD_2003_2020.csv', index_col=0)
     #moisture_min_data = pd.read_csv('./incidents_fmc_data/mcarthur_canemc_grass_min_LGA.csv', index_col=0)
     moisture_min_data.index = pd.to_datetime(moisture_min_data.index)
     moisture_min_data = moisture_min_data[(moisture_min_data.index >= start_date) & (moisture_min_data.index <= end_date)]
@@ -106,7 +115,7 @@ if __name__=="__main__":
     df_a = df_a.pivot(columns='moisture_model', index=['date', 'region'], values='moisture_%').reset_index()
     
     #Now load curing data and do the same to it.
-    curing_data = pd.read_csv('C://Users/clark/analysis1/incidents_fmc_data/vicclim_avg_curing_200804-20206.csv', index_col=0)
+    curing_data = pd.read_csv('C://Users/clark/analysis1/incidents_fmc_data/vicclim_avg_curing_200304-202006.csv', index_col=0)
     #curing_data = pd.read_csv('./incidents_fmc_data/vicclim_avg_curing_200804-20206_LGA.csv', index_col=0)
     curing_data.index = pd.to_datetime(curing_data.index)
     curing_data = curing_data[(curing_data.index>=start_date) & (curing_data.index<=end_date)]
@@ -118,6 +127,7 @@ if __name__=="__main__":
     df_moisture_curing = pd.merge(left=df_a, right=df_b, how='inner', left_on=['date','region'], right_on=['date', 'curing_location'])
     df_moisture_curing = df_moisture_curing.drop(columns='curing_location')
 
+    """
     #Finally load the wind data.
     wind_data = pd.read_csv('C://Users/clark/analysis1/incidents_fmc_data/windavg_FWD_200804-202006.csv', index_col=0)
     wind_data.index = pd.to_datetime(wind_data.index)
@@ -132,7 +142,7 @@ if __name__=="__main__":
     df_c = df_c.pivot(columns='wind_time', index=['date','region'], values='wind_speed').reset_index()
 
     df_moisture_curing = pd.merge(left=df_moisture_curing, right=df_c, how='inner', left_on=['date', 'region'], right_on=['date','region'])
-    
+    """
 
     #Merge incident count, fire area onto moisture data:
     #moisture_incident_count = pd.merge(left=moisture_min_data, right=incidents_count, how='left', left_index=True, right_index=True)
@@ -149,11 +159,22 @@ if __name__=="__main__":
     #Clean out data with no moisture (because areas are too small)
     moisture_incident_count = moisture_incident_count[~moisture_incident_count['curing_%'].isna()]
     
-    #moisture_incident_count.to_csv('./incidents_fmc_data/moisture_vs_incidents_allFWAs_mapfiltered.csv')
+    #moisture_incident_count.to_csv('./incidents_fmc_data/moisture_curing_vs_incidents_allFWAs_2003_2020_fireflag1.csv')
+    #incidents_subset.to_csv('./incidents_fmc_data/moisture_curing_vs_area_2003_2020_fireflag.csv')
     
+    """
+    Get Annaburroo data as optional part of this plot.
+    """
+    """
+    plot_avg_data = pd.read_csv("C://Users/clark/analysis1/1986_Annaburroo_grassland_weather_data/Plot_Average_Data.csv")
+    fmc_anna = plot_avg_data['DFMC.%']
+    cur_anna = plot_avg_data['Cure.%']
+    """
     fig5 = plt.subplots(1)
-    ax = seaborn.scatterplot(x=moisture_incident_count['AM60_min'], y=moisture_incident_count['curing_%'], s=4)
+    ax = seaborn.scatterplot(x=moisture_incident_count['AM60_min'], y=moisture_incident_count['curing_%'], s=4, color='darkgreen', label='Incident data')
+    #ax = seaborn.scatterplot(x=fmc_anna, y=cur_anna, s=12,color='black', label='Annaburroo 1986')
     ax.set_xlabel('Fuel moisture')
+    ax.legend()
     
     #%%
     #Now time to fit the binomial hurdle step models.
@@ -161,13 +182,13 @@ if __name__=="__main__":
 
     #Fit GAMs:
     gam_binomial_moisture = LogisticGAM(s(0, n_splines=spline_number, spline_order=3)).fit(moisture_incident_count['AM60_min'].values, moisture_incident_count['incidents_on_day'].values)
-    gam_binomial_curing = LogisticGAM(s(0, n_splines=spline_number, spline_order=3), constraints='monotonic_inc').fit(moisture_incident_count['curing_%'].values, moisture_incident_count['incidents_on_day'].values)
-    gam_binomial_wind = LogisticGAM(s(0, n_splines=spline_number, spline_order=3)).fit(moisture_incident_count['wind_2pm'].values, moisture_incident_count['incidents_on_day'].values)
+    gam_binomial_curing = LogisticGAM(s(0, n_splines=spline_number, spline_order=3)).fit(moisture_incident_count['curing_%'].values, moisture_incident_count['incidents_on_day'].values)
+    #gam_binomial_wind = LogisticGAM(s(0, n_splines=spline_number, spline_order=3)).fit(moisture_incident_count['wind_2pm'].values, moisture_incident_count['incidents_on_day'].values)
     null_reg_ = LogisticGAM(s(0, n_splines=spline_number, spline_order=3)).fit(np.full(len(moisture_incident_count), 1).reshape(-1,1), moisture_incident_count['incidents_on_day'].values)
 
     #Calculate pseudo R2 metric for moisture:    
     moist_psr2 = pseudo_rsq(gam_binomial_moisture, null_reg_, moisture_incident_count['AM60_min'].values, moisture_incident_count['incidents_on_day'].values)
-    print("Pseudo R2 for binomial GAM on moisture: %1.3f " % moist_psr2)
+    print("Pseudo R2 for binomial GAM on moisture: %1.4f " % moist_psr2)
     
     #plot?
     fig, axs = plt.subplots(1)
@@ -183,7 +204,7 @@ if __name__=="__main__":
 
     #Now the same for curing.
     curing_good = pseudo_rsq(gam_binomial_curing,null_reg_, moisture_incident_count['curing_%'].values, moisture_incident_count['incidents_on_day'].values)
-    print("Pseudo R2 binomial GAM on curing: %1.3f" % curing_good)
+    print("Pseudo R2 binomial GAM on curing: %1.4f" % curing_good)
 
 
     figa, axsa = plt.subplots(1)    
@@ -210,6 +231,7 @@ if __name__=="__main__":
     axsb.set_ylabel("func")
     axsb.legend()
     
+    """
     #Finally, wind.
     wind_good = pseudo_rsq(gam_binomial_wind, null_reg_, moisture_incident_count['wind_2pm'].values, moisture_incident_count['incidents_on_day'].values)
     print('Pseudo R2 of binomial GAM on wind: %1.3f' % wind_good)
@@ -222,17 +244,22 @@ if __name__=="__main__":
     axsb.set_title('Wind')
     axsb.set_xlabel('Wind (km/h)')
     axsb.set_ylabel("fires/no fires")
-    
+    """
     #In this case - construct a 2-predictor GAM.
     """
     gam_binomial_2d = LogisticGAM(s(0, n_splines=6, spline_order=3)
                        +s(1, n_splines=6, spline_order=3, constraints='monotonic_inc')
                        +te(0,1, n_splines=(6,6), constraints=('monotonic_dec','monotonic_inc'))).fit(moisture_incident_count[['AM60_min', 'curing_%']].values, moisture_incident_count['incidents_on_day'].values)
     """
+    """
     gam_binomial_2d = LogisticGAM(s(0, n_splines=spline_number, spline_order=3)
                        +s(1, n_splines=spline_number, spline_order=3, constraints='monotonic_inc')
                        +te(0,1, n_splines=(spline_number,spline_number), constraints=('monotonic_dec', 'monotonic_inc'))).fit(moisture_incident_count[['AM60_min', 'curing_%']].values, moisture_incident_count['incidents_on_day'].values)
-
+    """
+    gam_binomial_2d = LogisticGAM(s(0, n_splines=spline_number, spline_order=3)
+                       +s(1, n_splines=spline_number, spline_order=3)
+                       +te(0,1, n_splines=(spline_number,spline_number))).fit(moisture_incident_count[['AM60_min', 'curing_%']].values, moisture_incident_count['incidents_on_day'].values)
+    
     #Goodness of fit for 2D binomial GAM:
     binom_2d_good = pseudo_rsq(gam_binomial_2d, null_reg_, moisture_incident_count[['AM60_min', 'curing_%']],moisture_incident_count['incidents_on_day'].values)
     print("Pseudo R2 of binomial 2D GAM: %1.3f" % binom_2d_good)
@@ -315,7 +342,86 @@ if __name__=="__main__":
     axs4.plot_surface(xxx1, www1, Z1, cmap='viridis')
     axs4.set_title('Go/nogo prediction moisture wind, curing at '+str(curing_set_bi))
     """
+    #%%
+    #Instead of a hurdle of "is there or is there not an incident", why not count the number.
+    #these are already separate models, effectively...
+    spline_number=7
+    
+    
+    #Fit GAMs:
+    gam_poisson_moisture = PoissonGAM(s(0, n_splines=spline_number, spline_order=3)).fit(moisture_incident_count['AM60_min'].values, moisture_incident_count['point'].values)
+#    gam_poisson_curing = PoissonGAM(s(0, n_splines=spline_number, spline_order=3), constraints='monotonic_inc').fit(moisture_incident_count['curing_%'].values, moisture_incident_count['point'].values)
+    gam_poisson_curing = PoissonGAM(s(0, n_splines=spline_number, spline_order=3)).fit(moisture_incident_count['curing_%'].values, moisture_incident_count['point'].values)
+ #   gam_poisson_wind = PoissonGAM(s(0, n_splines=spline_number, spline_order=3)).fit(moisture_incident_count['wind_2pm'].values, moisture_incident_count['point'].values)
+    
+    #Get values for pseudo R2:
+    poisson_moist_psr2 = gam_poisson_moisture._estimate_r2(X=moisture_incident_count['AM60_min'], y=moisture_incident_count['point'].values)['explained_deviance']
+    poisson_curing_psr2 = gam_poisson_curing._estimate_r2(X=moisture_incident_count['curing_%'], y=moisture_incident_count['point'].values)['explained_deviance']
+    #poisson_wind_psr2 = gam_poisson_wind._estimate_r2(X=moisture_incident_count['wind_2pm'], y=moisture_incident_count['point'].values)['explained_deviance']
+    print('Pseudo R2 of Poisson GAM on moisture: %1.4f ' % poisson_moist_psr2)
+    print('Pseudo R2 of Poisson GAM on curing: %1.4f ' % poisson_curing_psr2)
+    #print('Pseudo R2 of Poisson GAM on wind: %1.4f ' % poisson_wind_psr2)
 
+    
+    #plot:        
+    figc, axsc = plt.subplots(1)
+    xx2 = gam_poisson_moisture.generate_X_grid(term=0)
+    poisson_moisture_predict = gam_poisson_moisture.predict_mu(xx2)
+    axsc.plot(xx2, poisson_moisture_predict)
+    axsc.scatter(moisture_incident_count['AM60_min'].values, moisture_incident_count['point'].values, facecolor='gray', edgecolors='none', s=8)
+    axsc.set_title('Predicted fuel moisture')
+    axsc.set_xlabel('Estimated fuel moisture (%)')
+    #    axs.set_ylabel("fires/no fires")
+    axsc.set_ylabel("Number of fires")
+    axsc.set_ylim(0,5)
+    
+    #Now the same for curing.
+    figb, axsb = plt.subplots(1)    
+    xx2 = gam_poisson_curing.generate_X_grid(term=0)
+    poisson_curing_pred = gam_poisson_curing.predict_mu(xx2)
+    cheney_curve = 1.12/(1+59.2*np.exp(-0.124*(xx2-50)))
+    cruz_curve = 1.036/(1+103.98*np.exp(-0.0996*(xx2-20)))
+    cheney_curve = cheney_curve*np.max(poisson_curing_pred)   #scale Cheney and Cruz curves to the max in the GAM
+    cruz_curve = cruz_curve*np.max(poisson_curing_pred)    
+    axsb.plot(xx2, poisson_curing_pred, label='GAM')
+    axsb.plot(xx2, cheney_curve, label="Cheney coeff")
+    axsb.plot(xx2, cruz_curve, label='Cruz coeff')
+    axsb.scatter(moisture_incident_count['curing_%'].values, moisture_incident_count['point'].values, facecolor='gray', edgecolors='none', s=8)
+    axsb.set_title('Curing - All')
+    axsb.set_xlabel('Curing')
+    axsb.set_ylabel("Number of fires")
+    axsb.set_ylim(0,1)
+    axsb.legend()    
+    #2D version:
+    gam_poisson_2d = PoissonGAM(s(0, n_splines=spline_number, spline_order=3)
+                           +s(1, n_splines=spline_number, spline_order=3, constraints='monotonic_inc')
+                           +te(0,1, n_splines=(spline_number,spline_number), constraints=('monotonic_dec', 'monotonic_inc'))).fit(moisture_incident_count[['AM60_min', 'curing_%']].values, moisture_incident_count['point'].values)
+
+    #Goodness of fit for 2D binomial GAM:
+    poiss_2d_good = gam_poisson_2d._estimate_r2(X=moisture_incident_count[['AM60_min', 'curing_%']], y=moisture_incident_count['point'])['explained_deviance']
+    print("Pseudo R2 of Poisson 2D GAM: %1.3f" % poiss_2d_good)
+    print("*******************************************")
+    
+    
+    #OK let's try this way to make a surface plot.
+    xx3a = gam_binomial_2d.generate_X_grid(term=0, meshgrid=False)
+    yy3a = gam_binomial_2d.generate_X_grid(term=1, meshgrid=False)
+    xxx = np.empty([len(xx3a), len(yy3a)])
+    yyy = np.empty([len(xx3a), len(yy3a)])
+    Z = np.empty([len(xx3a), len(yy3a)])
+    
+    for i in range(0,len(xx5)):
+        xxx[:,i] = xx3a[:,0]
+        yyy[i,:] = yy3a[:,1]
+        xx3a[:,1] = yy3a[i,1]
+        Z[:,i] = gam_poisson_2d.predict_mu(xx3a)
+    
+    fig4, axs4 = plt.subplots(1, subplot_kw={"projection": "3d"})
+    axs4.plot_surface(xxx, yyy, Z, cmap='viridis')
+    axs4.set_title('2d Poisson GAM - number of incidents per region per day')
+ 
+    
+    
     #%%
     #Area model. Where we have an incident, how big do they get?
     #This should be fairly straightforward.
@@ -323,7 +429,17 @@ if __name__=="__main__":
     #First: Plot curing and moisture, and area is the size of the point.
     
     fig5 = plt.subplots(1)
-    ax_sp1 = seaborn.scatterplot(x=incidents_subset['AM60_moisture'], y=incidents_subset['Curing_%'], size=incidents_subset['fire_area_ha'], sizes=(3,200))
+    ax_sp1 = seaborn.scatterplot(x=incidents_subset[incidents_subset['fire_area_ha']<1000]['AM60_moisture'], 
+                                 y=incidents_subset[incidents_subset['fire_area_ha']<1000]['Curing_%'], 
+                                 s=3, color='darkgreen')
+
+    cmap_o =plt.get_cmap('ocean')
+    my_cmap = pltcolors.LinearSegmentedColormap.from_list('ocean_trunc_0_0.8', cmap_o(np.linspace(0.0,0.7,100)))    
+    ax_sp1 = seaborn.scatterplot(x=incidents_subset[incidents_subset['fire_area_ha']>=1000]['AM60_moisture'], 
+                                 y=incidents_subset[incidents_subset['fire_area_ha']>=1000]['Curing_%'], 
+                                 size=incidents_subset[incidents_subset['fire_area_ha']>=1000]['fire_area_ha'], sizes=(3,200), 
+                                 hue=incidents_subset[incidents_subset['fire_area_ha']>=1000]['fire_area_ha'], palette=my_cmap)
+    
     ax_sp1.set_xlabel('Fuel moisture')
     
     fig5b = plt.subplots(1)
@@ -338,25 +454,13 @@ if __name__=="__main__":
     #gam_area_fmc95 = ExpectileGAM(s(0, n_splines=spline_number, spline_order=3), expectile=0.5).fit(incidents_subset['AM60_moisture'].values, incidents_subset['fire_area_ha'].values)
     gam_area_fmc95 = ExpectileGAM(s(0,n_splines=spline_number, spline_order=3, constraints='monotonic_dec'), expectile=expectile_set).fit(incidents_subset['AM60_moisture'].values, incidents_subset['fire_area_ha'].values)
     
+    
     """
-    gam_area_fmc95_ci90 = ExpectileGAM(s(0,n_splines=spline_number, spline_order=3, constraints='monotonic_dec'), expectile=0.5
-                                     ).fit_quantile(incidents_subset['AM60_moisture'].values, incidents_subset['fire_area_ha'].values, quantile=0.99
-                                           )
-    """
-    """                                                
-    gam_area_fmc95_ci10 = ExpectileGAM(s(0,n_splines=spline_number, spline_order=3, constraints='monotonic_dec'), expectile=expectile_set
-                                     ).fit_quantile(incidents_subset['AM60_moisture'].values, incidents_subset['fire_area_ha'].values, quantile=0.1
-                                           )
-    """
-    """
-    gam_area_fmc95_ci90 = ExpectileGAM(s(0,n_splines=spline_number, spline_order=3, constraints='monotonic_dec'), expectile=expectile_set
-                                     ).fit(incidents_subset['AM60_moisture'].values, incidents_subset['fire_area_ha'].values
-                                           ).confidence_intervals(incidents_subset['AM60_moisture'].values, width=0.9
-                                           )
-     """                                              
-                                                    
     gam_area_cur = LinearGAM(s(0, n_splines=spline_number, spline_order=3)).fit(incidents_subset['Curing_%'].values, incidents_subset['fire_area_ha'].values)
     gam_area_cur95 = ExpectileGAM(s(0,n_splines=spline_number, spline_order=3), expectile=expectile_set, constraints='monotonic_inc').fit(incidents_subset['Curing_%'].values, incidents_subset['fire_area_ha'].values)
+    """
+    gam_area_cur = LinearGAM(s(0, n_splines=spline_number, spline_order=3)).fit(incidents_subset['Curing_%'].values, incidents_subset['fire_area_ha'].values)
+    gam_area_cur95 = ExpectileGAM(s(0,n_splines=spline_number, spline_order=3), expectile=expectile_set).fit(incidents_subset['Curing_%'].values, incidents_subset['fire_area_ha'].values)
 
     gam_area_2d95 = ExpectileGAM(s(0, n_splines=spline_number, spline_order=3, constraints='monotonic_dec')
                                  +s(1, n_splines=spline_number, spline_order=3, constraints='monotonic_inc')
@@ -399,7 +503,7 @@ if __name__=="__main__":
     axs6[1].scatter(incidents_subset['Curing_%'].values, incidents_subset['fire_area_ha'].values, facecolor='gray', edgecolors='none', s=8)
     axs6[1].plot(xx8_cur, gam_area_cur.predict(xx8_cur), color='k')
     axs6[1].plot(xx8_cur, gam_area_cur95.predict(xx8_cur), color='red')    
-    axs6[1].set_ylim(0,300)
+    axs6[1].set_ylim(0,500)
     axs6[1].set_xlabel('Curing %')
     axs6[1].set_title('Curing', fontsize=16)
     axs6[1].legend(['points','mean', '95%'])
@@ -473,28 +577,37 @@ if __name__=="__main__":
     print("************************************")
 
     #%%
+    
+    spline_number = 8
+    expectile_set = 0.95
+    
     #Optional extra (comment in or out): Take square root of area, to calculate a "characteristic fire length"
     #Area measured in hectares. So sqrt gives us units of 100m, so divide by 10 (multiply by 0.1) to give km
     #as the length.
     incidents_subset['char_length'] = np.sqrt(incidents_subset['fire_area_ha'])*0.1
+    moisture_incident_count['char_length'] = np.sqrt(moisture_incident_count['fire_area_ha'])*0.1
     
     #Now do the same GAMs.
-    gam_len_fmc95 = ExpectileGAM(s(0,n_splines=spline_number, spline_order=3, constraints='monotonic_dec'), expectile=expectile_set).fit(incidents_subset['AM60_moisture'].values, incidents_subset['char_length'].values)
-    gam_len_cur95 = ExpectileGAM(s(0,n_splines=spline_number, spline_order=3), expectile=expectile_set, constraints='monotonic_inc').fit(incidents_subset['Curing_%'].values, incidents_subset['char_length'].values)
-
+    
+    #gam_len_fmc95 = ExpectileGAM(s(0,n_splines=spline_number, spline_order=3, constraints='monotonic_dec'), expectile=expectile_set).fit(incidents_subset['AM60_moisture'].values, incidents_subset['char_length'].values)
+    gam_len_fmc95 = ExpectileGAM(s(0,n_splines=spline_number, spline_order=3), expectile=expectile_set).fit(incidents_subset['AM60_moisture'].values, incidents_subset['char_length'].values)
+    
+    #gam_len_cur95 = ExpectileGAM(s(0,n_splines=spline_number, spline_order=3), expectile=expectile_set, constraints='monotonic_inc').fit(incidents_subset['Curing_%'].values, incidents_subset['char_length'].values)
+    gam_len_cur95 = ExpectileGAM(s(0,n_splines=spline_number, spline_order=3), expectile=expectile_set).fit(incidents_subset['Curing_%'].values, incidents_subset['char_length'].values)
     gam_len_2d95 = ExpectileGAM(s(0, n_splines=spline_number, spline_order=3, constraints='monotonic_dec')
                                  +s(1, n_splines=spline_number, spline_order=3, constraints='monotonic_inc')
                                  +te(0,1,n_splines=(spline_number,spline_number), constraints=('monotonic_dec', 'monotonic_inc')), expectile=expectile_set).fit(incidents_subset[['AM60_moisture', 'Curing_%']].values, incidents_subset['char_length'].values)
     
 
     gam_len_2d95_tensoronly = ExpectileGAM(te(0,1,n_splines=(spline_number,spline_number), constraints=('monotonic_dec', 'monotonic_inc')), expectile=expectile_set).fit(incidents_subset[['AM60_moisture', 'Curing_%']].values, incidents_subset['char_length'].values)
-
+    
     #Calculate our goodness of fit measures:
     len_moist_res95 = incidents_subset['char_length'].values - gam_len_fmc95.predict(incidents_subset['AM60_moisture'].values)
     len_cur_res95 = incidents_subset['char_length'].values - gam_len_cur95.predict(incidents_subset['Curing_%'].values)
     len_2d_res95 = incidents_subset['char_length'].values - gam_len_2d95.predict(incidents_subset[['AM60_moisture', 'Curing_%']].values)
     len_2dtens_res95 = incidents_subset['char_length'].values - gam_len_2d95_tensoronly.predict(incidents_subset[['AM60_moisture', 'Curing_%']].values)
     len_null95 = incidents_subset['char_length'].values - expectile(incidents_subset['char_length'].values, alpha=expectile_set)
+    
     
     len_moist_good = goodfit(len_moist_res95, len_null95, expectile_set)
     len_cur_good = goodfit(len_cur_res95, len_null95, expectile_set)
@@ -520,17 +633,17 @@ if __name__=="__main__":
     axs13[1].plot(xx8_cur, gam_len_cur95.predict(xx8_cur), color='red')    
     axs13[1].plot(xx8_cur, cruz_curing1d, color='blue')
     axs13[1].plot(xx8_cur, cheney_curing1d, color='green')
-    axs13[1].set_ylim(0,4)
+    axs13[1].set_ylim(0,2)
     axs13[1].set_xlabel('Curing %')
     axs13[1].set_title('Curing', fontsize=16)
 #    axs13[1].legend(['points','mean', '95%'])
     axs13[1].legend(['points','95%GAM', 'Cruz', 'Cheney'])
     fig13.suptitle('Characteristic fire length, by incident', fontsize=20)
 
+
     res_cheney1d = incidents_subset['char_length'] - (1.12/(1+59.2*np.exp(-0.124*(incidents_subset['Curing_%']-50))))*gam_len_cur95.predict(100)
     good_cheney1d = goodfit(res_cheney1d, len_null95, expectile_set)
     print(good_cheney1d)
-    
     xx15 = gam_len_2d95.generate_X_grid(term=0, meshgrid=False)
     yy15 = gam_len_2d95.generate_X_grid(term=1, meshgrid=False)
         
@@ -593,6 +706,202 @@ if __name__=="__main__":
     print("Goodness for current grass functions, Cruz curing: %1.3f " % cruz_good)
     print("Goodness for current grass functions, Cheney curing: %1.3f " % cheney_good)
     print("**************************************")
+    
+    #%%
+    """
+    #Optional extra (comment in or out): Take square root of area, to calculate a "characteristic fire length"
+    #Area measured in hectares. So sqrt gives us units of 100m, so divide by 10 (multiply by 0.1) to give km
+    #as the length.
+    
+    #This version takes the total area burnt in the region and the square root of it. So this is region based, not incident based.
+    
+    incidents_subset['char_length'] = np.sqrt(incidents_subset['fire_area_ha'])*0.1
+    moisture_incident_count['char_length'] = np.sqrt(moisture_incident_count['fire_area_ha'])*0.1
+    
+    #Now do the same GAMs.
+
+    gam_len_fmc95 = ExpectileGAM(s(0,n_splines=spline_number, spline_order=3), expectile=expectile_set).fit(moisture_incident_count['AM60_min'].values, moisture_incident_count['char_length'].values)
+
+    #gam_len_cur95 = ExpectileGAM(s(0,n_splines=spline_number, spline_order=3), expectile=expectile_set, constraints='monotonic_inc').fit(incidents_subset['Curing_%'].values, incidents_subset['char_length'].values)
+    gam_len_cur95 = ExpectileGAM(s(0,n_splines=spline_number, spline_order=3), expectile=expectile_set).fit(moisture_incident_count['curing_%'].values, moisture_incident_count['char_length'].values)
+    gam_len_2d95 = ExpectileGAM(s(0, n_splines=spline_number, spline_order=3, constraints='monotonic_dec')
+                             +s(1, n_splines=spline_number, spline_order=3, constraints='monotonic_inc')
+                             +te(0,1,n_splines=(spline_number,spline_number), constraints=('monotonic_dec', 'monotonic_inc')), expectile=expectile_set).fit(moisture_incident_count[['AM60_min', 'curing_%']].values, moisture_incident_count['char_length'].values)
+
+
+    gam_len_2d95_tensoronly = ExpectileGAM(te(0,1,n_splines=(spline_number,spline_number), constraints=('monotonic_dec', 'monotonic_inc')), expectile=expectile_set).fit(moisture_incident_count[['AM60_min', 'curing_%']].values, moisture_incident_count['char_length'].values)
+
+    #Calculate our goodness of fit measures:
+    len_moist_res95 = moisture_incident_count['char_length'].values - gam_len_fmc95.predict(moisture_incident_count['AM60_min'].values)
+    len_cur_res95 = moisture_incident_count['char_length'].values - gam_len_cur95.predict(moisture_incident_count['curing_%'].values)
+    len_2d_res95 = moisture_incident_count['char_length'].values - gam_len_2d95.predict(moisture_incident_count[['AM60_min', 'curing_%']].values)
+    len_2dtens_res95 = moisture_incident_count['char_length'].values - gam_len_2d95_tensoronly.predict(moisture_incident_count[['AM60_min', 'curing_%']].values)
+    len_null95 = moisture_incident_count['char_length'].values - expectile(moisture_incident_count['char_length'].values, alpha=expectile_set)
+    
+    
+    len_moist_good = goodfit(len_moist_res95, len_null95, expectile_set)
+    len_cur_good = goodfit(len_cur_res95, len_null95, expectile_set)
+    len_2d_good = goodfit(len_2d_res95, len_null95, expectile_set)
+    len_2dtens_good = goodfit(len_2dtens_res95, len_null95, expectile_set)
+    print('Goodness of fit of characteristic length GAM on moisture only: %1.3f' % len_moist_good)
+    print('Goodness of fit of characteristic length GAM on curing only: %1.3f' % len_cur_good)
+    print('Goodness of fit of 2D characteristic length GAM: %1.3f' % len_2d_good)
+    print('Goodness of fit of 2D characteristic length GAM tensor only: %1.3f' % len_2dtens_good)
+    
+    cruz_curing1d = 1.036/(1+103.98*np.exp(-0.0996*(xx8_cur-20)))*gam_len_cur95.predict(100)
+    cheney_curing1d = 1.12/(1+59.2*np.exp(-0.124*(xx8_cur-50)))*gam_len_cur95.predict(100)
+    
+    fig13, axs13 = plt.subplots(1,2, figsize=(11,5))
+#    axs13[0].scatter(incidents_subset['AM60_moisture'].values, incidents_subset['char_length'].values, facecolor='gray', edgecolors='none', s=8)
+    axs13[0].scatter(moisture_incident_count['AM60_min'].values, moisture_incident_count['char_length'].values, facecolor='gray', edgecolors='none', s=8)
+    axs13[0].plot(xx8, gam_len_fmc95.predict(xx8), color='red')    
+    axs13[0].set_ylabel('Length (km)')
+    axs13[0].set_ylim(0,2)
+    axs13[0].set_xlabel('Moisture (McArthur) %')
+    axs13[0].set_title('Fuel moisture', fontsize=16)
+    axs13[0].legend(['points','95%GAM'])
+#    axs13[1].scatter(incidents_subset['Curing_%'].values, incidents_subset['char_length'].values, facecolor='gray', edgecolors='none', s=8)
+    axs13[1].scatter(moisture_incident_count['curing_%'].values, moisture_incident_count['char_length'].values, facecolor='gray', edgecolors='none', s=8)
+    axs13[1].plot(xx8_cur, gam_len_cur95.predict(xx8_cur), color='red')    
+    axs13[1].plot(xx8_cur, cruz_curing1d, color='blue')
+    axs13[1].plot(xx8_cur, cheney_curing1d, color='green')
+    axs13[1].set_ylim(0,2)
+    axs13[1].set_xlabel('Curing %')
+    axs13[1].set_title('Curing', fontsize=16)
+#    axs13[1].legend(['points','mean', '95%'])
+    axs13[1].legend(['points','95%GAM', 'Cruz', 'Cheney'])
+    fig13.suptitle('Characteristic fire length, by district total', fontsize=20)
+
+    xx15 = gam_len_2d95.generate_X_grid(term=0, meshgrid=False)
+    yy15 = gam_len_2d95.generate_X_grid(term=1, meshgrid=False)
+        
+    xxx = np.empty([len(xx9), len(yy9)])
+    yyy = np.empty([len(xx9), len(yy9)])
+    Z = np.empty([len(xx9), len(yy9)])
+    for i in range(0,len(xx9)):
+            xxx[:,i] = xx15[:,0]
+            yyy[i,:] = yy15[:,1]
+            xx15[:,1] = yy15[i,1]
+            Z[:,i] = gam_len_2d95.predict(xx15)
+
+    fig14, axs14 = plt.subplots(1, subplot_kw={"projection": "3d"})
+    axs14.plot_surface(xxx, yyy, Z, cmap='viridis')
+    axs14.set_title('Char. length vs curing and fuel moisture')
+    
+    fig8, axs8 = plt.subplots(1,2, figsize=(8,4))
+    axs8[0].plot(xx9[:,0], gam_len_2d95.partial_dependence(term=0, X=xx9))
+    axs8[0].set_title('Fuel moisture')
+    axs8[0].set_xlabel('Moisture (%)')
+    axs8[0].set_ylabel('Partial dependence value')
+    axs8[0].set_ylim(-0.4, 0.4)
+    axs8[0].set_xlim(0,22)
+    axs8[0].hlines(y=0, xmin=-2, xmax=24, color='k')
+    axs8[1].plot(yy9[:,1], gam_len_2d95.partial_dependence(term=1, X=yy9))
+    axs8[1].set_title('Curing')
+    axs8[1].set_xlabel('Curing (%)')
+    axs8[1].set_ylim(-0.4, 0.4)
+    axs8[1].set_xlim(0,100)
+    axs8[1].hlines(y=0, xmin=0, xmax=100, color='k')
+    
+    xy9 = gam_len_2d95.generate_X_grid(term=2, meshgrid=True)
+    fig9, axs9 = plt.subplots(1, subplot_kw={"projection": "3d"})
+    xy_dep = gam_len_2d95.partial_dependence(term=2, X=xy9, meshgrid=True)
+    axs9.plot_surface(xy9[0], xy9[1], xy_dep, cmap='viridis')
+    axs9.set_title('Tensor term partial dependence - length')
+    
+    xxx = np.empty([len(xx9), len(yy9)])
+    yyy = np.empty([len(xx9), len(yy9)])
+    Z = np.empty([len(xx9), len(yy9)])
+    for i in range(0,len(xx9)):
+            xxx[:,i] = xx15[:,0]
+            yyy[i,:] = yy15[:,1]
+            xx15[:,1] = yy15[i,1]
+            Z[:,i] = gam_len_2d95_tensoronly.predict(xx15)
+
+    fig15, axs15 = plt.subplots(1, subplot_kw={"projection": "3d"})
+    axs15.plot_surface(xxx, yyy, Z, cmap='viridis')
+    axs15.set_title('Char. length vs curing and fuel moisture, tensor only')
+    
+    #Compare to the Cheney/Cruz models.
+    max_len = gam_len_2d95.predict([[0,100]]) #max is 0% FMC, 100% curing.
+    cheney_pred = np.exp(-0.108*incidents_subset['AM60_moisture'])*(1.12/(1+59.2*np.exp(-0.124*(incidents_subset['Curing_%'].values-50))))*max_len
+    cruz_pred = np.exp(-0.108*incidents_subset['AM60_moisture'])*(1.036/(1+103.98*np.exp(-0.0996*(incidents_subset['Curing_%'].values-20))))*max_len
+
+    res_cruz = incidents_subset['char_length'] - cruz_pred
+    res_cheney = incidents_subset['char_length'] - cheney_pred    
+    cruz_good = goodfit(res_cruz, len_null95, expectile_set)
+    cheney_good = goodfit(res_cheney, len_null95, expectile_set)
+    print("Goodness for current grass functions, Cruz curing: %1.3f " % cruz_good)
+    print("Goodness for current grass functions, Cheney curing: %1.3f " % cheney_good)
+    print("**************************************")
+    """
+
+    #%%
+    """
+    """
+    #Let's go back to using time to containment. Does it give us better pseudo R2 for the expectile GAM.
+    """
+    #Problem is that a lot of incidents don't have containment time. Filter to those that do.    
+    incidents_subset_time = incidents_subset[['AM60_moisture', 'Curing_%', 'containment_time_hr']]
+    incidents_subset_time.dropna(subset='containment_time_hr', inplace=True)
+    
+    #Fit GAMs:
+    gam_time_fmc95 = ExpectileGAM(s(0,n_splines=spline_number, spline_order=3, constraints='monotonic_dec'), expectile=expectile_set).fit(incidents_subset_time['AM60_moisture'].values, incidents_subset_time['containment_time_hr'].values)
+    gam_time_cur95 = ExpectileGAM(s(0,n_splines=spline_number, spline_order=3, constraints='monotonic_inc'), expectile=expectile_set).fit(incidents_subset_time['Curing_%'].values, incidents_subset_time['containment_time_hr'].values)
+    
+    gam_time_2d95 = ExpectileGAM(s(0, n_splines=spline_number, spline_order=3, constraints='monotonic_dec')
+                                 +s(1, n_splines=spline_number, spline_order=3, constraints='monotonic_inc')
+                                 +te(0,1,n_splines=(spline_number,spline_number), constraints=('monotonic_dec', 'monotonic_inc')), expectile=expectile_set).fit(incidents_subset_time[['AM60_moisture', 'Curing_%']].values, incidents_subset_time['containment_time_hr'].values)
+    
+    #Calculate goodness of fit metrics:
+    time_moist_res95 = incidents_subset_time['containment_time_hr'].values - gam_time_fmc95.predict(incidents_subset_time['AM60_moisture'].values)
+    time_cur_res95 = incidents_subset_time['containment_time_hr'].values - gam_time_cur95.predict(incidents_subset_time['Curing_%'].values)
+    time_2d_res95 = incidents_subset_time['containment_time_hr'].values - gam_time_2d95.predict(incidents_subset_time[['AM60_moisture', 'Curing_%']].values)
+    time_null95 = incidents_subset_time['containment_time_hr'].values - expectile(incidents_subset_time['containment_time_hr'].values, alpha=expectile_set)
+
+    time_moist_good = goodfit(time_moist_res95, time_null95, expectile_set)
+    time_cur_good = goodfit(time_cur_res95, time_null95, expectile_set)
+    time_2d_good = goodfit(time_2d_res95, time_null95, expectile_set)
+    print("Goodness of fit for containment time GAM on moisture only: %1.3f " % time_moist_good)
+    print("Goodness of fit for containment time GAM on curing only: %1.3f " % time_cur_good)
+    print("Goodness of fit for 2D containment time GAM: %1.3f " % time_2d_good)
+    
+    #PLOT:
+    xx10 = gam_time_fmc95.generate_X_grid(term=0)
+    xx10_cur = gam_time_cur95.generate_X_grid(term=0)
+    xx11 = gam_time_2d95.generate_X_grid(term=0)
+    yy11 = gam_time_2d95.generate_X_grid(term=1)
+    fig16, axs16 = plt.subplots(1,2, figsize=(11,5))
+    axs16[0].scatter(incidents_subset_time['AM60_moisture'].values, incidents_subset_time['containment_time_hr'].values, facecolor='gray', edgecolors='none', s=8)
+    axs16[0].plot(xx10, gam_time_fmc95.predict(xx10), color='red')    
+    axs16[0].set_ylabel('Containment time (hr)')
+    axs16[0].set_ylim(0,500)
+    axs16[0].set_xlabel('Moisture (McArthur) %')
+    axs16[0].set_title('Fuel moisture', fontsize=16)
+    axs16[0].legend(['points','95%GAM'])
+    axs16[1].scatter(incidents_subset_time['Curing_%'].values, incidents_subset_time['containment_time_hr'].values, facecolor='gray', edgecolors='none', s=8)
+    axs16[1].plot(xx10_cur, gam_time_cur95.predict(xx10_cur), color='red')    
+    axs16[1].set_ylim(0,200)
+    axs16[1].set_xlabel('Curing %')
+    axs16[1].set_title('Curing', fontsize=16)
+    axs16[1].legend(['points','mean', '95%'])
+#    axs16[1].legend(['points','95%GAM', 'Cruz', 'Cheney'])
+    fig16.suptitle('Time to containment, by incident', fontsize=20)
+
+    #2D plot:
+    xxx = np.empty([len(xx11), len(yy11)])
+    yyy = np.empty([len(xx11), len(yy11)])
+    Z = np.empty([len(xx11), len(yy11)])
+    for i in range(0,len(xx11)):
+                xxx[:,i] = xx11[:,0]
+                yyy[i,:] = yy11[:,1]
+                xx11[:,1] = yy11[i,1]
+                Z[:,i] = gam_time_2d95.predict(xx11)
+
+    fig18, axs18 = plt.subplots(1, subplot_kw={"projection": "3d"})
+    axs18.plot_surface(xxx, yyy, Z, cmap='viridis')
+    axs18.set_title('Time to contain vs curing and fuel moisture')
+    """    
 
     #%%
     """

@@ -12,6 +12,7 @@
 #This assumes the file "datacube_region_designate_rating.py"
 #is in the same directory as this.
 
+import sys, os
 import numpy as np
 import xarray as xr
 import geopandas
@@ -114,15 +115,22 @@ def replace_fuel_calc_rating(original_path, newdata_paths, date_in, area_mask, f
 
     
 if __name__=="__main__":
-    dc_path = 'C:/Users/clark/analysis1/afdrs_fbi_recalc/Recalculated_VIC_Grids/full_recalc_jul_24/recalc_files/'
-    #recalc_path can be multiple paths for multiple changes
-    recalc_path = ['C:/Users/clark/analysis1/afdrs_fbi_recalc/Recalculated_VIC_Grids/mallee_threshold_and_18OC/recalc_files/']
+    
+    sys.path.append(os.path.abspath('./afdrs_fbi_recalc/scripts'))
+    from helper_functions import loadGeoTiff, regrid_xr
 
-    path_to_fuel_lut_orig = "C:/Users/clark/analysis1/afdrs_fbi_recalc/data/fuel/fuel-type-model-authorised-vic-20231012043244.csv"
-    path_to_fuel_lut_recalc = "C:/Users/clark/analysis1/afdrs_fbi_recalc/data/fuel/fuel-type-model-authorised-vic-20231012043244.csv"
+    
+    dc_path = 'C:/Users/clark/analysis1/afdrs_fbi_recalc/Recalculated_VIC_Grids/full_recalc_mar25/recalc_files/'
+    #recalc_path can be multiple paths for multiple changes
+    recalc_path = ['C:/Users/clark/analysis1/afdrs_fbi_recalc/Recalculated_VIC_Grids/pine2025_updates/recalc_files/']
+
+    path_to_fuel_lut_orig = "C:/Users/clark/analysis1/afdrs_fbi_recalc/data/fuel/fuel-type-model-authorised-vic-20250225011044.csv"
+    path_to_fuel_lut_recalc = "C:/Users/clark/analysis1/afdrs_fbi_recalc/data/fuel/fuel-type-model-authorised-vic-20250225011044.csv"
 
     #Get the regional template grid for defining each area:
-    map_by_pixel_in = xr.open_dataset("C:/Users/clark/analysis1/afdrs_fbi_recalc/data/template_nc_grids/map_by_pixel_centroid_FWA_1500m.nc")
+#    map_by_pixel_in = xr.open_dataset("C:/Users/clark/analysis1/afdrs_fbi_recalc/data/template_nc_grids/map_by_pixel_centroid_FWA_1500m.nc")
+    map_by_pixel_in = xr.open_dataset("C:/Users/clark/analysis1/afdrs_fbi_recalc/data/template_nc_grids/map_by_pixel_centroid_LGA_1500m.nc")
+#    map_by_pixel_in = xr.open_dataset("C:/Users/clark/analysis1/afdrs_fbi_recalc/data/template_nc_grids/map_by_pixel_centroid_ICC_1500m.nc")
     area_name_list = np.unique(map_by_pixel_in['Area_Name'])
     area_name_list = area_name_list[area_name_list!='']
     
@@ -135,13 +143,15 @@ if __name__=="__main__":
         date_str = dt.strftime("%Y%m%d")
         if Path(dc_path+'VIC_'+date_str+'_recalc.nc').is_file():
                 dates_used.append(dt)
+                if not Path(recalc_path[0]+'VIC_'+date_str+'_recalc.nc').is_file():
+                    raise FileNotFoundError('Matching replacement day not found for '+date_str+'. Exiting')                   
 
     k=0
     for area_name in area_name_list:
-        lgas_to_miss =['Darebin', 'Moreland', 'Maribyrnong', 'Yarra', 'Boroondara','Monash','Banyule', 'Port Phillip', 
-                       'Glen Eira', 'Bayside', 'Hobsons Bay', 'Maroondah', 'Moonee Valley',
-                       'Whitehorse','Stonnington', 'Falls Creek Alpine Resort', 'Lake Mountain Alpine Resort',
-                       'Mount Buller Alpine Resort', 'Mount Hotham Alpine Resort', 'Mount Stirling Alpine Resort', 'Gabo Island',
+        lgas_to_miss =['Darebin', 'Moreland', 'Maribyrnong', 'Yarra', 'Boroondara','Monash', 'Port Phillip', 
+                       'Glen Eira', 'Bayside', 'Hobsons Bay', 'Moonee Valley',
+                       'Stonnington', 
+                       'Gabo Island',
                        'Kingston', 'Melbourne']
         if area_name in lgas_to_miss:
             print("Skip "+area_name+", is in metro or otherwise too small. Next.")
@@ -165,4 +175,4 @@ if __name__=="__main__":
         end_time = time.time()
         print('Time taken for this region: '+str(round(end_time-start_time, 3)))
 
-    fbi_and_rating_changes.to_csv("C:/Users/clark/analysis1/datacube_daily_stats/version_jul24/changes/fwd/fbi_mallee_OC18_oct24.csv")
+    fbi_and_rating_changes.to_csv("C:/Users/clark/analysis1/datacube_daily_stats/version_mar25/changes/fbi_pineupdates_lga.csv")

@@ -3,12 +3,17 @@
 
 #Update 8/1/25: Include ability to calc wind at time of incident too.
 
+#Update 18/6/25: Got everything needed to calc FBI and GFDI, so do that.
+
 import numpy as np
 import xarray as xr
 import pandas as pd
 import rioxarray
 from shapely.geometry import mapping, Polygon
 from datetime import datetime
+from fdrs_calcs import spread_models
+
+HEAT_YIELD = 18600 #kJ/kg
 
 def haversine(lon1, lat1, lon2, lat2):
     #Formula to calculate the distance between lat and lon points so we can
@@ -33,6 +38,28 @@ def nearest_hour_index(time_series, pivot_time):
     time_diff = np.abs([time - pivot_time for time in time_series])
     return time_diff.argmin(0)
 
+def calculate_gfdi(temp, rh, wind, curing, fuel_load=4.5):
+    #Calculate GFDI using Purton equation
+    #Temp in deg C, wind in km/h
+    GFDI=np.round(        
+            np.exp(
+                -1.523
+                + 1.027 * np.log(fuel_load)
+                - 0.009432 * np.power((100 - curing), 1.536)
+                + 0.02764 * temp 
+                + 0.6422 * np.power(wind, 0.5) 
+                - 0.2205 * np.power(rh, 0.5)
+                )
+                )
+    return GFDI
+
+def calculate_grass_fbi(dead_fuel_moisture, wind, curing, fuel_load=4.5, fuel_condition=2):
+    #Calculate ROS, intensity, FBI from grass parameters
+    ROS = spread_models.csiro_grassland.calc_rate_of_spread(dead_fuel_moisture, wind, curing, fuel_condition)
+    intensity = spread_models.common.calc_fire_intensity(ROS, fuel_load, HEAT_YIELD)
+    fbi = spread_models.fire_behaviour_index.grass(intensity)
+    return ROS, intensity, fbi
+    
 if __name__=='__main__':
     #Load the incident data.
     incidents_in = pd.read_pickle("C:/Users/clark/OneDrive - Country Fire Authority/Documents - Fire Risk, Research & Community Preparedness - RD private/DATA/Victorian Wildfires Research Dataset/incidents.pkl")    
@@ -100,7 +127,9 @@ if __name__=='__main__':
     incidents_in['fuel_type_flag'] = fuel_type_flag
     incidents_subset = incidents_in[incidents_in['fuel_type_flag']==1] 
 
-    #Next step: For each incident, what is the FMC, wind speed and curing?
+    #%%
+
+    #Next step: For each incident, what is the FMC, wind speed, curing, GFDI, FBI?
     incidents_subset['reported_date'] = pd.to_datetime(incidents_subset['reported_time'].dt.date)
     unique_dates = incidents_subset['reported_date'].unique()
     
@@ -109,12 +138,16 @@ if __name__=='__main__':
     #Below is setting up the selection for the first loop (so it loads the first time)
     month_sel = -1
     
-    radius_from_incident = 10   #km from incident from which to calculate the 
+    radius_from_incident = 10   #km from incident from which to calculate the average moisture, 
     
     id_for_moisture = []
     moisture_val = []
     curing_val = []
     wind_val = []
+    gfdi_val = []
+    grassfbi_val = []
+    ros_val = []
+    intensity_val = []
     for dt in unique_dates:
         print('Starting '+str(dt))
         #Filter to incidents on the day
@@ -136,14 +169,20 @@ if __name__=='__main__':
                     curing_in = xr.open_dataset("M:/Archived/VicClimV5/Curing_Input_for_VicClim/mapVictoria_curing_for_VicClim_"+str(dt.year)+mth_str+".nc")
 
             #Calculating McArthur moisture:
-            print("calculating moisture")
+            print("Calculating moisture")
             AM60_moist = 9.58 - 0.205*temp_in['T_SFC'].values + 0.138*rh_in['RH_SFC'].values
+            #Find daily minimum of moisture, RH, max of temperature
+            #Build arrays first then cycle through each day. Doing this for all points across Vic
             print("Find minimum daily")
             n_days = temp_in.time.shape[0]/24
             AM60_moist_min = np.full((int(n_days), len(temp_in.latitude), len(temp_in.longitude)), np.nan)
+            temp_max = np.full((int(n_days), len(temp_in.latitude), len(temp_in.longitude)), np.nan)
+            rh_min = np.full((int(n_days), len(temp_in.latitude), len(temp_in.longitude)), np.nan)
             dates_wx = []
             for i in range(0,int(n_days)):
                 AM60_moist_min[i,:,:] = np.nanmin(AM60_moist[24*i:24*(i+1),:,:], axis=0)
+                temp_max[i,:,:] = np.nanmax(temp_in['T_SFC'][24*i:24*(i+1),:,:].values, axis=0)
+                rh_min[i,:,:] = np.nanmin(rh_in['RH_SFC'][24*i:24*(i+1),:,:].values, axis=0)
                 dates_wx.append(temp_in['time'].values[24*i])
             
             moist_xarr = xr.DataArray(AM60_moist_min, coords=[dates_wx, temp_in.latitude, temp_in.longitude], dims=['time','latitude','longitude'], name=['fuel_moisture'])
@@ -155,18 +194,30 @@ if __name__=='__main__':
         sel_date_ = dt==pd.to_datetime(temp_times)
         
         #For each incident - grab the average moisture and curing in a 10km radius.
-        print('Calculating moisture for incidents on '+str(dt))
+        #And calc FBI and FDI from wind, temp, RH and the above.
+        print('Calculating moisture, FBIs for incidents on '+str(dt))
         for j in range(0,len(incidents_sel)):
             distance_from_point = haversine(incidents_sel['longitude'].iloc[j], incidents_sel['latitude'].iloc[j], lon_grid, lat_grid)
             AM60_moist_avg = np.nanmean(xr.where(distance_from_point<radius_from_incident, moist_xarr.values[sel_date_,:,:][0,:,:], np.nan))
             curing_avg = np.nanmean(xr.where(distance_from_point<radius_from_incident, curing_in['GCI'].values[sel_date_,:,:][0,:,:], np.nan))
             wind_time_ind = nearest_hour_index(wind_in.time.values, incidents_sel['reported_time'].iloc[j])
             wind_avg = np.nanmean(xr.where(distance_from_point<radius_from_incident, wind_in['Wind_Mag_SFC'].values[wind_time_ind,:,:], np.nan))
+            maxtemp_avg = np.nanmean(xr.where(distance_from_point<radius_from_incident, temp_max[sel_date_, :,:][0,:,:], np.nan))
+            minrh_avg = np.nanmean(xr.where(distance_from_point<radius_from_incident, rh_min[sel_date_, :,:][0,:,:], np.nan))
+            gfdi_avg = calculate_gfdi(maxtemp_avg, minrh_avg, wind_avg, curing_avg)
+            ros_avg, intensity_avg, fbi_avg = calculate_grass_fbi(AM60_moist_avg, wind_avg, curing_avg)
+            
             id_for_moisture.append(incidents_sel.index[j])
             moisture_val.append(AM60_moist_avg)
             curing_val.append(curing_avg)
-            wind_val.append(wind_avg)            
+            wind_val.append(wind_avg)
+            gfdi_val.append(gfdi_avg)
+            ros_val.append(ros_avg)
+            intensity_val.append(intensity_avg)
+            grassfbi_val.append(fbi_avg)
+            
     
-    moisture_df = pd.DataFrame({'ID':id_for_moisture, 'AM60_moisture':moisture_val, 'Curing_%':curing_val, 'Wind':wind_val})
+    moisture_df = pd.DataFrame({'ID':id_for_moisture, 'AM60_moisture':moisture_val, 'Curing_%':curing_val, 'Wind':wind_val, 'GFDI':gfdi_val,
+                                'ROS_grazed':ros_val, 'Intensity_kWm':intensity_val, 'FBI_grazed':grassfbi_val})
     incidents_out = pd.merge(incidents_subset, moisture_df, left_index=True, right_on='ID', how='inner')
-    incidents_out.to_pickle('incidents_filtered_with_fmc_curing_2003-2020.pkl')
+    incidents_out.to_pickle('incidents_filtered_and_fbis_2003-2020.pkl')

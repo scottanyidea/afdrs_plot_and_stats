@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.append(os.path.abspath('./afdrs_fbi_recalc-main/scripts'))
 from helper_functions import loadGeoTiff, regrid_xr
 
-def calc_region_rating(data_path, date_in, area_mask, fuel_lut_path, mcarthur_mask, calc_fdi=True):
+def calc_region_rating(data_path, date_in, area_mask, fuel_lut_path, mcarthur_mask, prc_level=90, calc_fdi=True):
 #def calc_region_rating(data_path, date_in, area_shp, fuel_lut_path, mcarthur_mask):
     """
     Designate an FBI, fire danger rating and McArthur FDI for a defined region and date.
@@ -35,10 +35,14 @@ def calc_region_rating(data_path, date_in, area_mask, fuel_lut_path, mcarthur_ma
     ----------
     data_path (string) : Path to where the input data is located. 
     date_in (datetime object): Date to look at.
-    area_shp (geopandas object) : Geopandas object with the polygon with which to calculate
-        the designated FBI and rating within.
+    area_mask (xarray DataArray) : xarray dataarray same lat/lon resolution as the recalc, with areas to be masked out
+                                   set as nan or FALSE
     fuel_lut_path (string) : Path and file name of the fuel lookup table to match the fuel type codes with 
     their model names.
+    mcarthur_mask (xarray dataset) : xarray dataset same lat/lon resolution as recalc, masking out areas as grass or forest
+                                    in the McArthur system (1 is forest)
+    calc_fdi (default True) : Option of whether or not to calculate FDI in the region as well.
+    prc_level (default 90) : Level of percentile used to calculate the FBI or FDI. Defaults to 90, currently operationally used.
 
     Returns
     -------
@@ -69,7 +73,7 @@ def calc_region_rating(data_path, date_in, area_mask, fuel_lut_path, mcarthur_ma
             clipped_recalc = recalc_max.rio.clip(area_shp.geometry.apply(mapping), area_shp.crs, drop=False)
             """
             #Find the 90th percentile FBI for the original file.
-            desig_fbi = np.nanpercentile(clipped_recalc, 90)
+            desig_fbi = np.nanpercentile(clipped_recalc, prc_level)
             desig_rating = rating_calc(desig_fbi)
             
             #Find dominant model for each rating (ie. what's driven the 90th percentile)
@@ -86,7 +90,7 @@ def calc_region_rating(data_path, date_in, area_mask, fuel_lut_path, mcarthur_ma
                 fdi_max.rio.write_crs("EPSG:4326",inplace=True)
                 clipped_fdi = fdi_max.rio.clip(area_shp.geometry.apply(mapping),area_shp.crs,drop=False)
                 """
-                desig_fdi = np.nanpercentile(clipped_fdi, 90)
+                desig_fdi = np.nanpercentile(clipped_fdi, prc_level)
 
                 #And also get dominant FFDI or GFDI.
                 dom_mcarthur_str = find_dominant_ffdi_or_gfdi(clipped_fdi, desig_fdi, mcarthur_mask)

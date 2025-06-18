@@ -1,4 +1,4 @@
-#Extension of calc_kbdi_footprint_avg.py
+
 #This is to calculate the entirety of the landscape risk matrix.
 
 #WHAT WE NEED TO SET:

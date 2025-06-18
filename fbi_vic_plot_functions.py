@@ -276,7 +276,7 @@ def plot_kbdi(kbdi, areas_shapefile, extent, save_plot=None, plt_title=None):
 
     Parameters
     ----------
-    df (xarray DataArray) : KBDI array, must be 2-dimensional with lat and lon coordinate variables.
+    kbdi (xarray DataArray) : KBDI array, must be 2-dimensional with lat and lon coordinate variables.
     areas_shapefile (geopandas object): Shapefile that contains sub-regions that will be plotted as outlines overlaying
     the FBI data.
     save_plot (string, optional) : Name to save the plot. 
