@@ -3,12 +3,15 @@
 
 #Update 8/1/25: Include ability to calc wind at time of incident too.
 
+#Update and fix 24/7/25: VicClim data in UTC time so some adjustments needed to be made.
+
+
 import numpy as np
 import xarray as xr
 import pandas as pd
 import rioxarray
 from shapely.geometry import mapping, Polygon
-from datetime import datetime
+from datetime import datetime, timedelta
 
 def haversine(lon1, lat1, lon2, lat2):
     #Formula to calculate the distance between lat and lon points so we can
@@ -100,9 +103,15 @@ if __name__=='__main__':
     incidents_in['fuel_type_flag'] = fuel_type_flag
     incidents_subset = incidents_in[incidents_in['fuel_type_flag']==1] 
 
+    #%%
+
     #Next step: For each incident, what is the FMC, wind speed and curing?
     incidents_subset['reported_date'] = pd.to_datetime(incidents_subset['reported_time'].dt.date)
     unique_dates = incidents_subset['reported_date'].unique()
+    
+    #I should produce columns with UTC time so that we can align the wind correctly. This was an issue before...
+    incidents_subset['reported_time_utc'] = pd.to_datetime(incidents_subset['reported_time'])-timedelta(hours=11)
+    incidents_subset['reported_date_utc'] = pd.to_datetime(incidents_subset['reported_time_utc'].dt.date)
     
     #The VicClim files are monthly. So, to avoid re-loading each time we go to a new incident/day,
     #we grab the month. If we're in the same month, don't re-load.
@@ -118,7 +127,8 @@ if __name__=='__main__':
     for dt in unique_dates:
         print('Starting '+str(dt))
         #Filter to incidents on the day
-        incidents_sel = incidents_subset[incidents_subset['reported_date']==dt]
+        #incidents_sel = incidents_subset[incidents_subset['reported_date']==dt]
+        incidents_sel = incidents_subset[incidents_subset['reported_date_utc']==dt]
         #Load weather variables from VicClim:
         if dt.month<10:
             mth_str = '0'+str(dt.month)
@@ -160,7 +170,8 @@ if __name__=='__main__':
             distance_from_point = haversine(incidents_sel['longitude'].iloc[j], incidents_sel['latitude'].iloc[j], lon_grid, lat_grid)
             AM60_moist_avg = np.nanmean(xr.where(distance_from_point<radius_from_incident, moist_xarr.values[sel_date_,:,:][0,:,:], np.nan))
             curing_avg = np.nanmean(xr.where(distance_from_point<radius_from_incident, curing_in['GCI'].values[sel_date_,:,:][0,:,:], np.nan))
-            wind_time_ind = nearest_hour_index(wind_in.time.values, incidents_sel['reported_time'].iloc[j])
+#            wind_time_ind = nearest_hour_index(wind_in.time.values, incidents_sel['reported_time'].iloc[j])
+            wind_time_ind = nearest_hour_index(wind_in.time.values, incidents_sel['reported_time_utc'].iloc[j])
             wind_avg = np.nanmean(xr.where(distance_from_point<radius_from_incident, wind_in['Wind_Mag_SFC'].values[wind_time_ind,:,:], np.nan))
             id_for_moisture.append(incidents_sel.index[j])
             moisture_val.append(AM60_moist_avg)
