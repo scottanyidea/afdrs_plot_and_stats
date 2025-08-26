@@ -135,7 +135,7 @@ if __name__=='__main__':
     
     #I should produce columns with UTC time so that we can align the wind correctly. This was an issue before...
     incidents_subset['reported_time_utc'] = pd.to_datetime(incidents_subset['reported_time'])-timedelta(hours=11)
-    incidents_subset['reported_date_utc'] = incidents_subset['reported_time_utc'].dt.date
+    incidents_subset['reported_date_utc'] = pd.to_datetime(incidents_subset['reported_time_utc'].dt.date)
     
     #The VicClim files are monthly. So, to avoid re-loading each time we go to a new incident/day,
     #we grab the month. If we're in the same month, don't re-load.
@@ -228,3 +228,6 @@ if __name__=='__main__':
                                 'ROS_grazed':ros_val, 'Intensity_kWm':intensity_val, 'FBI_grazed':grassfbi_val})
     incidents_out = pd.merge(incidents_subset, moisture_df, left_index=True, right_on='ID', how='inner')
     incidents_out.to_pickle('incidents_filtered_and_fbis_2003-2020.pkl')
+
+
+    
