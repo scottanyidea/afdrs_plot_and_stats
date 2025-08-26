@@ -5,6 +5,9 @@
 #V2 uses a new set of inputs, and the eventual intention is for this to be completely
 #automated.
 
+#Update 26/8/25: 
+#We've now decided to use 3 monthly rainfall deficits instead of soil moisture. This is now v2.1.
+
 #INPUTS:
 #Grassland curing - daily in ADFD
 
@@ -116,8 +119,8 @@ def regrid_xr(xr_temp, xr_new, method = "nearest"):
 if __name__=="__main__":
     #Set dates:
     year_sel_ = 2025
-    mon_sel = 8
-    day_sel = 15
+    mon_sel = 1
+    day_sel = 12
 
     datetime_sel = datetime(year_sel_, mon_sel, day_sel)
     
@@ -163,18 +166,13 @@ if __name__=="__main__":
     pg_pctile = loadGeoTiff(pg_path+'pg_data_current.tiff')
     pg_pctile = xr.where(pg_pctile>100, np.nan, pg_pctile)
     
-    #Soil moisture:
-    #This will come from tower 2, interim is local dir
-    SM_path = "C:/Users/clark/analysis1/afdrs_fbi_recalc/data/soil_moisture/"
-    sm_file = xr.open_dataset(SM_path+'sm_pct_2025.nc')
-    sm_data = sm_file.sel(time=datetime_sel)['sm_pct']
-    
     
     #Past 12 months rainfall decile:
     #This comes from tower 2
     #But interim measure is to use the temporary rainfall archive on sharepoint
     print('Loading rainfall and calculating deciles')
-    region_rain_pctiles = []
+    region_rain_pctiles_12m = []
+    region_rain_pctiles_3m = []
     ICC_RAINFALL_PATH = Path("C:/Users/clark/OneDrive - Country Fire Authority/Documents - Fire Risk, Research & Community Preparedness - RD private/DATA/tmp/BPS/Output/Rainfall/ICC/IMG/")
     for region in region_list:
         fc_product_name = '[ICC]['+region+'][RAINFALL][ANNUAL_YEAR][SPATIALLY_AVERAGED].csv'
@@ -189,14 +187,26 @@ if __name__=="__main__":
         #Calculate the yearly totals for every 12 month block (start/ending month prior to current month),
         #from 1910 to current - this produces the annual rainfall record to calculate percentiles
         totals_12m = []
+        totals_3m = []
         for yr in range(icc_rainfall_avg.Year.min(), icc_rainfall_avg.Year.max()):
             totals_12m.append(
                 rain_grouped[((rain_grouped.index.get_level_values('year') == yr+1) & (rain_grouped.index.get_level_values('month') < mon_sel)) 
                          | ((rain_grouped.index.get_level_values('year') == yr) & (rain_grouped.index.get_level_values('month') >=mon_sel)) ].sum()
                 )
-    
+            if mon_sel >=4:
+                totals_3m.append(
+                    rain_grouped[((rain_grouped.index.get_level_values('year') == yr+1) & (rain_grouped.index.get_level_values('month') < mon_sel)) 
+                                 | ((rain_grouped.index.get_level_values('year') == yr+1) & (rain_grouped.index.get_level_values('month') >=mon_sel-3)) ].sum()
+                    )
+            else:
+                #case to capture area around start of year
+                totals_3m.append(
+                    rain_grouped[((rain_grouped.index.get_level_values('year') == yr+1) & (rain_grouped.index.get_level_values('month') < mon_sel)) 
+                                 | ((rain_grouped.index.get_level_values('year') == yr) & (rain_grouped.index.get_level_values('month') >=9+mon_sel)) ].sum()
+                    )
         #The desired percentile score is just the last value. Calculate the percentile score.
-        region_rain_pctiles.append(stats.percentileofscore(totals_12m, totals_12m[-1]))
+        region_rain_pctiles_12m.append(stats.percentileofscore(totals_12m, totals_12m[-1]))
+        region_rain_pctiles_3m.append(stats.percentileofscore(totals_3m, totals_3m[-1]))
     
     
     ##########################
@@ -261,8 +271,6 @@ if __name__=="__main__":
     tmax_fc.rio.write_crs("EPSG:4326", inplace=True)
     rain_fc.rio.set_spatial_dims(x_dim='lon',y_dim='lat',inplace=True)
     rain_fc.rio.write_crs("EPSG:4326", inplace=True)
-    sm_data.rio.set_spatial_dims(x_dim='longitude', y_dim='latitude', inplace=True)
-    sm_data.rio.write_crs("EPSG:4326", inplace=True)
     pg_pctile.rio.set_spatial_dims(x_dim='longitude', y_dim='latitude', inplace=True)
     pg_pctile.rio.write_crs("EPSG:4326", inplace=True)
 
@@ -270,7 +278,6 @@ if __name__=="__main__":
     region_avg_cur = []
     region_avg_tmax_fc = []
     region_avg_rain_fc = []
-    region_avg_sm = []
     region_avg_pg = []
     
     #Calculate spatial averages for each region:
@@ -282,10 +289,8 @@ if __name__=="__main__":
         print('Starting '+region)
         area_polygon = shp_in[shp_in['ICC_NAME']==region]
         clipped_cur = curing_in.rio.clip(area_polygon.geometry.apply(mapping), area_polygon.crs, drop=False)
-        clipped_sm = sm_data.rio.clip(area_polygon.geometry.apply(mapping), area_polygon.crs, drop=False)
         clipped_pg = pg_pctile.rio.clip(area_polygon.geometry.apply(mapping), area_polygon.crs, drop=False)
         region_avg_cur.append(np.nanmean(clipped_cur))
-        region_avg_sm.append(np.nanmean(clipped_sm))
         region_avg_pg.append(np.nanmean(clipped_pg))
         clipped_tmaxfc = tmax_fc.rio.clip(area_polygon.geometry.apply(mapping), area_polygon.crs, drop=False)
         clipped_rainfc = rain_fc.rio.clip(area_polygon.geometry.apply(mapping), area_polygon.crs, drop=False)
@@ -296,18 +301,18 @@ if __name__=="__main__":
     print("Calculating risk scores")
     curing_rating = calc_thresholds(np.array(region_avg_cur), CURING_THRESHOLDS, dir='increasing')
     grass_fl_rating = calc_thresholds(np.array(region_avg_pg), PASTURE_GROWTH_THRESHOLDS, dir='increasing')
-    sm_rating = calc_thresholds(np.array(region_avg_sm), SOIL_MOISTURE_THRESHOLDS, dir='decreasing')
-    rainfall_pctile_rating = calc_thresholds(np.array(region_rain_pctiles), RAINFALL_THRESHOLDS, dir='decreasing')
+    rainfall_pctile_rating_3m = calc_thresholds(np.array(region_rain_pctiles_3m), RAINFALL_THRESHOLDS, dir='decreasing')
+    rainfall_pctile_rating_12m = calc_thresholds(np.array(region_rain_pctiles_12m), RAINFALL_THRESHOLDS, dir='decreasing')
     rainfall_fc_rating = calc_thresholds(np.array(region_avg_rain_fc), RAINFALL_FC_THRESHOLDS, dir='decreasing')
     temp_fc_rating = calc_thresholds(np.array(region_avg_tmax_fc), TEMP_ODDS_THRESHOLDS, dir='increasing')
-    total_rating = curing_rating + grass_fl_rating + sm_rating + rainfall_pctile_rating + temp_fc_rating + rainfall_fc_rating
+    total_rating = curing_rating + grass_fl_rating + rainfall_pctile_rating_12m + rainfall_pctile_rating_12m + temp_fc_rating + rainfall_fc_rating
     
     print("Building matrix and saving")
     region_matrix = pd.DataFrame(data={'ICC_Footprint':region_list, 
                                        'Curing':region_avg_cur, 'Curing_score':curing_rating,
                                        'Grass FL score': grass_fl_rating,
-                                       'Soil moisture score': sm_rating,
-                                       '12 month rain pctile': region_rain_pctiles, '12 month rain score': rainfall_pctile_rating,
+                                       '3 month rain pctile': region_rain_pctiles_3m, '3 month rain score': rainfall_pctile_rating_3m,
+                                       '12 month rain pctile': region_rain_pctiles_12m, '12 month rain score': rainfall_pctile_rating_12m,
                                        'Chance temp extremes':region_avg_tmax_fc, 'Temp extreme score':temp_fc_rating,
                                        'Chance rain above median': region_avg_rain_fc, 'Rain fc score': rainfall_fc_rating,
                                        'Overall_score': total_rating}
