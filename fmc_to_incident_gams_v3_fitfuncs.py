@@ -80,7 +80,11 @@ if __name__=="__main__":
     
     #Spatial join to get FWD that the incident is in:
     incidents_subset = geopandas.GeoDataFrame(incidents_subset, geometry='point', crs=shp_in.crs)
-    incidents_subset = geopandas.tools.sjoin(incidents_subset, shp_in, how='left', predicate='within')
+    #Before joining - change projection to GDA2020/VicGrids for proper consistency:
+    shp_in.to_crs("EPSG:7899", inplace=True)
+    incidents_subset.to_crs("EPSG:7899", inplace=True)
+    #incidents_subset = geopandas.tools.sjoin(incidents_subset, shp_in, how='left', predicate='within')
+    incidents_subset = geopandas.tools.sjoin_nearest(incidents_subset, shp_in, how='left')
     
     #Step 1: Hurdle model. We are going to look at the district wide moisture and curing. Was there an incident?
     
@@ -133,11 +137,11 @@ if __name__=="__main__":
     #Clean out data with no moisture (because areas are too small)
     moisture_incident_count = moisture_incident_count[~moisture_incident_count['curing_%'].isna()]
     
+    
     #Subset to a specific FWD:
-    region_name = 'Northern Country'
+    region_name = 'East Gippsland'
     moisture_incident_count = moisture_incident_count[moisture_incident_count['region']==region_name]
     incidents_subset = incidents_subset[incidents_subset['Area_Name']==region_name]
-    
     
     #Take square root of area, to calculate a "characteristic fire length"
     #Area measured in hectares. So sqrt gives us units of 100m, so divide by 10 (multiply by 0.1) to give km
@@ -164,7 +168,7 @@ if __name__=="__main__":
     
     #plot?
     fig, axs = plt.subplots(1)
-    xx = gam_binomial_moisture.generate_X_grid(term=0)
+    xx = gam_binomial_moisture.generate_X_grid(term=0).flatten()  #apparently this creates an array of single value arrays? Messy...
     binomial_moisture_predict = gam_binomial_moisture.predict_mu(xx)
     axs.plot(xx, binomial_moisture_predict, label='GAM')
     axs.scatter(moisture_incident_count['AM60_min'].values, moisture_incident_count['incidents_on_day'].values, facecolor='gray', edgecolors='none', s=8)
@@ -173,7 +177,7 @@ if __name__=="__main__":
     axs.set_ylabel("fires/no fires")
 
     figa, axsa = plt.subplots(1)    
-    xx2 = gam_binomial_curing.generate_X_grid(term=0)
+    xx2 = gam_binomial_curing.generate_X_grid(term=0).flatten()
     binomial_curing_pred = gam_binomial_curing.predict_mu(xx2)
     axsa.plot(xx2, binomial_curing_pred)
     axsa.scatter(moisture_incident_count['curing_%'].values, moisture_incident_count['incidents_on_day'].values, facecolor='gray', edgecolors='none', s=8)
@@ -242,7 +246,7 @@ if __name__=="__main__":
     cheney_pseudor2 = 1-(cheney_model.llf/cheney_model.llnull)
     print('Pseudo R2 of 2D model using Cruz curing model: %1.4f' % cruz_pseudor2)
     print('Pseudo R2 of 2D model using Cheney curing model: %1.4f' % cheney_pseudor2)
-    print("*******************************************")
+
 
     #We know the shapes now. Now need to fit a function to this.
     #FMC: Assume a negative exponential.
@@ -260,12 +264,16 @@ if __name__=="__main__":
     curing_x0_exp = []
     
     moisture_fit_bi = curve_fit(func_neg_exp, xx.flatten(), binomial_moisture_predict)
+    moisture_fit_bi_r2 = 1 - (np.sum((binomial_moisture_predict - func_neg_exp(xx, moisture_fit_bi[0][0], moisture_fit_bi[0][1]))**2)
+                              /(np.sum((binomial_moisture_predict - np.mean(binomial_moisture_predict))**2)))
+    print('R2 of exponential fit to moisture GAM: %1.4f ' % moisture_fit_bi_r2)
     axs.plot(xx.flatten(), func_neg_exp(xx, moisture_fit_bi[0][0], moisture_fit_bi[0][1]), color='r', label='function fit')
     axs.legend()
     moisture_name.append('binomial')
     moisture_a.append(moisture_fit_bi[0][0])
     moisture_b.append(moisture_fit_bi[0][1])
     
+    #Curing: Assume a sigmoid shape same as Cheney, Cruz curves.
     def func_sigmoid(x, b, x0):
         return 1/(1+np.exp(-b*(x-x0)))
     
@@ -274,13 +282,20 @@ if __name__=="__main__":
     curing_b = []
     curing_x0 = []
     
-    curing_fit_bi = curve_fit(func_sigmoid, xx2.flatten(), y_curing_norm)
+    curing_fit_bi = curve_fit(func_sigmoid, xx2.flatten(), y_curing_norm, p0=[0.1, 95])
+    curing_fit_bi_r2 = 1 - (np.sum((y_curing_norm - func_sigmoid(xx2, curing_fit_bi[0][0], curing_fit_bi[0][1]))**2)
+                              /(np.sum((y_curing_norm - np.mean(y_curing_norm))**2)))
+    print('R2 of exponential fit to curing GAM: %1.4f ' % curing_fit_bi_r2)
     axsb.plot(xx2.flatten(), func_sigmoid(xx2, curing_fit_bi[0][0], curing_fit_bi[0][1]), color='r', label='function fit')
     axsb.legend()
     curing_name.append('binomial')
     curing_a.append(1)
     curing_b.append(curing_fit_bi[0][0])
     curing_x0.append(curing_fit_bi[0][1])
+    
+    
+    
+    print("*******************************************")
     
     #%%
     #Instead of a hurdle of "is there or is there not an incident", why not count the number.
@@ -305,9 +320,12 @@ if __name__=="__main__":
     
     #plot:        
     figc, axsc = plt.subplots(1)
-    xx4 = gam_poisson_moisture.generate_X_grid(term=0)
+#    xx4 = gam_poisson_moisture.generate_X_grid(term=0).flatten()
+    xx4 = np.arange(0,22, step=0.2)
     poisson_moisture_predict = gam_poisson_moisture.predict_mu(xx4)
-    axsc.plot(xx4, poisson_moisture_predict)
+    current_curve = np.exp(-0.108*xx4) * gam_poisson_moisture.predict(0)  #current curve is in grass model now. Then just multiply by maximum at moisture=0 to scale
+    axsc.plot(xx4, poisson_moisture_predict, label='GAM')
+    axsc.plot(xx4, current_curve, color='k', label='Existing phi_M')
     axsc.scatter(moisture_incident_count['AM60_min'].values, moisture_incident_count['point'].values, facecolor='gray', edgecolors='none', s=8)
     axsc.set_title('Predicted fuel moisture')
     axsc.set_xlabel('Estimated fuel moisture (%)')
@@ -316,7 +334,7 @@ if __name__=="__main__":
     
     #Now the same for curing.
     figb, axsb = plt.subplots(1)    
-    xx4b = gam_poisson_curing.generate_X_grid(term=0)
+    xx4b = gam_poisson_curing.generate_X_grid(term=0).flatten()
     poisson_curing_pred = gam_poisson_curing.predict_mu(xx4b)
     cheney_curve = 1.12/(1+59.2*np.exp(-0.124*(xx4b-50)))
     cruz_curve = 1.036/(1+103.98*np.exp(-0.0996*(xx4b-20)))
@@ -329,7 +347,7 @@ if __name__=="__main__":
     axsb.set_title('Curing - All')
     axsb.set_xlabel('Curing')
     axsb.set_ylabel("Number of fires")
-    axsb.set_ylim(0,1)
+    axsb.set_ylim(0,0.2)
     axsb.legend()    
     #2D version:
     gam_poisson_2d = PoissonGAM(s(0, n_splines=spline_number, spline_order=3)
@@ -339,7 +357,7 @@ if __name__=="__main__":
     #Goodness of fit for 2D binomial GAM:
     poiss_2d_good = gam_poisson_2d._estimate_r2(X=moisture_incident_count[['AM60_min', 'curing_%']], y=moisture_incident_count['point'])['explained_deviance']
     print("Pseudo R2 of Poisson 2D GAM: %1.4f" % poiss_2d_good)
-    print("*******************************************")
+
     
     
     #OK let's try this way to make a surface plot.
@@ -355,30 +373,74 @@ if __name__=="__main__":
         xx5[:,1] = yy5[i,1]
         Z[:,i] = gam_poisson_2d.predict_mu(xx5)
     
-    fig4, axs4 = plt.subplots(1, subplot_kw={"projection": "3d"})
-    axs4.plot_surface(xxx, yyy, Z, cmap='viridis')
-    axs4.set_title('2d Poisson GAM - number of incidents per region per day')
+    fig4, axs4 = plt.subplots(1,2, subplot_kw={"projection": "3d"})
+    axs4[0].plot_surface(xxx, yyy, Z, cmap='viridis')
+    axs4[0].set_title('GAM')
  
+    #Fit functional curves and add to plot for comparison:
     moisture_fit_poisson = curve_fit(func_neg_exp, xx4.flatten(), poisson_moisture_predict)
+    moisture_fit_poisson_r2 = 1 - (np.sum((poisson_moisture_predict - func_neg_exp(xx4, moisture_fit_poisson[0][0], moisture_fit_poisson[0][1]))**2)
+                              /(np.sum((poisson_moisture_predict - np.mean(poisson_moisture_predict))**2)))
+    print('R2 of exponential fit to moisture Poisson GAM: %1.4f ' % moisture_fit_poisson_r2)
     axsc.plot(xx4.flatten(), func_neg_exp(xx4, moisture_fit_poisson[0][0], moisture_fit_poisson[0][1]), color='r', label='function fit')
     axsc.legend()
     moisture_name.append('Poisson')
     moisture_a.append(moisture_fit_poisson[0][0])
     moisture_b.append(moisture_fit_poisson[0][0])
     
-    
+    #For any curing function not predicting a probability - the maximum isn't necessarily 1.
+    #So need this as a function parameter
     def func_sigmoid_scaled(x, a, b, x0):
         return a/(1+np.exp(-b*(x-x0)))
     
-    curing_fit_poisson = curve_fit(func_sigmoid_scaled, xx4b.flatten(), poisson_curing_pred,p0=[0.8, 1, 50], bounds=([0,0,0],[1,1000,100]), maxfev=5000)
-    axsb.plot(xx4b.flatten(), func_sigmoid_scaled(xx4b, curing_fit_poisson[0][0], curing_fit_poisson[0][1], curing_fit_poisson[0][2]), color='r', label='function fit')
+    curing_fit_poisson = curve_fit(func_sigmoid_scaled, xx4b, poisson_curing_pred,p0=[0.8, 1, 50], bounds=([0,0,0],[1,1000,100]), maxfev=5000)
+    curing_fit_poisson_r2 = 1 - (np.sum((poisson_curing_pred - func_sigmoid_scaled(xx4b, curing_fit_poisson[0][0], curing_fit_poisson[0][1], curing_fit_poisson[0][2]))**2)
+                              /(np.sum((poisson_curing_pred - np.mean(poisson_curing_pred))**2)))
+    print('R2 of sigmoid fit to curing Poisson GAM: %1.4f ' % curing_fit_poisson_r2)
+    axsb.plot(xx4b, func_sigmoid_scaled(xx4b, curing_fit_poisson[0][0], curing_fit_poisson[0][1], curing_fit_poisson[0][2]), color='r', label='function fit')
     axsb.legend()
     curing_name.append('Poisson')
     curing_a.append(curing_fit_poisson[0][0])
     curing_b.append(curing_fit_poisson[0][1])
     curing_x0.append(curing_fit_poisson[0][2])
 
+    #Finally, let's try the 2D GAM. First define a function that is the product of moisture and curing curves.
+    #This product exists in the existing grassland model.    
+    def func_2d(X, a0, b0, a1,b1, y0):
+        x = X[:,0]
+        y = X[:,1]
+        return (a0*np.exp(-b0*x))*(a1/(1+np.exp(-b1*(y-y0))))
+    twod_a0 = []
+    twod_b0 = []
+    twod_a1 = []
+    twod_b1 = []
+    twod_y0 = []
     
+    #Set up x (inputs) and y (target), then curve fit
+    x_data_ = np.c_[xxx.flatten(), yyy.flatten()]
+    y_data_ = gam_poisson_2d.predict_mu(x_data_)
+    fit_poisson_2d = curve_fit(func_2d, xdata=x_data_,ydata=y_data_, p0=[0.5, 0.1, 1,1,80], maxfev=5000)
+    fit_prms = fit_poisson_2d[0]
+    fit_poisson_2d_r2 = 1 - (
+                            np.sum((y_data_ - func_2d(x_data_, fit_prms[0], fit_prms[1], fit_prms[2],fit_prms[3],fit_prms[4]))**2)
+                             /(np.sum((y_data_ - np.mean(y_data_))**2))
+                             )
+    print('R2 of 2D fit to curing Poisson GAM: %1.4f' % fit_poisson_2d_r2)
+    
+    #Kind of have to make this plot the hard way.
+    for i in range(0, len(xx5)):
+        Z[:,i] = func_2d(np.c_[xxx[:,i],yyy[:,i]], fit_prms[0], fit_prms[1], fit_prms[2], fit_prms[3], fit_prms[4])
+    
+    axs4[1].plot_surface(xxx, yyy, Z, cmap='viridis')
+    axs4[1].set_title('function fit')
+    fig4.suptitle('2D Poisson GAM - number of incidents/region/day')   
+    twod_a0.append(fit_prms[0])
+    twod_b0.append(fit_prms[1])
+    twod_a1.append(fit_prms[2])
+    twod_b1.append(fit_prms[3])
+    twod_y0.append(fit_prms[4])
+
+    print("*******************************************")
     #%%
     #Area model. Where we have an incident, how big do they get?
     #This should be fairly straightforward.
@@ -445,25 +507,29 @@ if __name__=="__main__":
     print('Goodness of fit of 2D area GAM: %1.3f' % area_2d_good)
     
     fig6, axs6 = plt.subplots(1,2, figsize=(11,5))
-    xx6 = gam_area_fmc.generate_X_grid(term=0)
-    xx6_cur = gam_area_cur.generate_X_grid(term=0)
+    xx6 = gam_area_fmc.generate_X_grid(term=0).flatten()
+    xx6_cur = gam_area_cur.generate_X_grid(term=0).flatten()
+    area_moist_pred = gam_area_fmc95.predict(xx6)
+    area_cur_pred = gam_area_cur95.predict(xx6_cur)
+    moisture_current_curve = np.exp(-0.108*xx6) * gam_area_fmc95.predict(0)
     axs6[0].scatter(moisture_incident.values, fire_area_incident.values, facecolor='gray', edgecolors='none', s=8)
     axs6[0].plot(xx6, gam_area_fmc.predict(xx6), color='k')
-    axs6[0].plot(xx6, gam_area_fmc95.predict(xx6), color='tab:blue')    
+    axs6[0].plot(xx6, area_moist_pred, color='tab:blue')
+    axs6[0].plot(xx6, moisture_current_curve, color='green')
 #    axs6[0].plot(xx8, gam_area_fmc95_ci90.predict(xx8), color='orange')
 #    axs6[0].plot(xx8, gam_area_fmc95_ci10.predict(xx8), color='orange')
     axs6[0].set_ylabel('Total area burnt (ha)')
-    axs6[0].set_ylim(0,4000)
+    axs6[0].set_ylim(0,8000)
     axs6[0].set_xlabel('Moisture (McArthur) %')
     axs6[0].set_title('Fuel moisture', fontsize=16)
     axs6[1].scatter(curing_incident.values, fire_area_incident.values, facecolor='gray', edgecolors='none', s=8)
     axs6[1].plot(xx6_cur, gam_area_cur.predict(xx6_cur), color='k')
-    axs6[1].plot(xx6_cur, gam_area_cur95.predict(xx6_cur), color='tab:blue')    
+    axs6[1].plot(xx6_cur, area_cur_pred, color='tab:blue')    
     cheney_curve_area = cheney_curve*gam_area_cur95.predict(100)
     cruz_curve_area = cruz_curve*gam_area_cur95.predict(100)
     axs6[1].plot(xx6_cur, cheney_curve_area, color='orange')
     axs6[1].plot(xx6_cur, cruz_curve_area, color='green')
-    axs6[1].set_ylim(0,2000)
+    axs6[1].set_ylim(0,1500)
     axs6[1].set_xlabel('Curing %')
     axs6[1].set_title('Curing', fontsize=16)
 #    axs6[1].legend(['points','mean', '95%'])
@@ -482,26 +548,56 @@ if __name__=="__main__":
         xx9[:,1] = yy9[i,1]
         Z[:,i] = gam_area_2d95.predict(xx9)
 
-    fig7, axs7 = plt.subplots(1, subplot_kw={"projection": "3d"})
-    axs7.plot_surface(xxx, yyy, Z, cmap='viridis')
-    axs7.set_title('Area prediction vs curing and fuel moisture')
+    fig7, axs7 = plt.subplots(1,2, figsize=(11,6), subplot_kw={"projection": "3d"})
+    axs7[0].plot_surface(xxx, yyy, Z, cmap='viridis')
+    axs7[0].set_title('Area prediction GAM')
     
     
-    moisture_fit_area = curve_fit(func_neg_exp, xx6.flatten(), gam_area_fmc95.predict(xx6))
+    moisture_fit_area = curve_fit(func_neg_exp, xx6, area_moist_pred)
+    moisture_fit_area_r2 = 1 - (np.sum((area_moist_pred - func_neg_exp(xx6, moisture_fit_area[0][0], moisture_fit_area[0][1]))**2)
+                              /(np.sum((area_moist_pred - np.mean(area_moist_pred))**2)))
+    print('R2 of exponential fit to moisture area GAM: %1.4f ' % moisture_fit_area_r2)
     axs6[0].plot(xx6.flatten(), func_neg_exp(xx6, moisture_fit_area[0][0], moisture_fit_area[0][1]), color='r', label='function fit')
-    axs6[0].legend(['points','mean', '95%', 'function fit'])
+    axs6[0].legend(['points','mean', str(int(expectile_set*100))+'%','existing phi_M', 'function fit'])
     moisture_name.append('Area_incident')
     moisture_a.append(moisture_fit_area[0][0])
     moisture_b.append(moisture_fit_area[0][1])
     
 
-
     curing_fit_area = curve_fit(func_sigmoid_scaled, xx6_cur.flatten(), gam_area_cur95.predict(xx6_cur.flatten()), p0=[1200, 0.02, 105], bounds=([0,0,0],[20000,1000,500]), maxfev=5000 )
+    curing_fit_area_r2 = 1 - (np.sum((area_cur_pred - func_sigmoid_scaled(xx6_cur, curing_fit_area[0][0], curing_fit_area[0][1], curing_fit_area[0][2]))**2)
+                              /(np.sum((area_cur_pred - np.mean(area_cur_pred))**2)))
+    print('R2 of sigmoid fit to curing area GAM: %1.4f ' % curing_fit_area_r2)
     axs6[1].plot(xx6_cur.flatten(), func_sigmoid_scaled(xx6_cur.flatten(), curing_fit_area[0][0],  curing_fit_area[0][1], curing_fit_area[0][2]), color='r', label='function fit')
-    axs6[1].legend(['points','mean', '95%','Cheney','Cruz','function_fit'])
+    axs6[1].legend(['points','mean', str(int(expectile_set*100))+'%','Cheney','Cruz','function_fit'])
     curing_a.append(curing_fit_area[0][0])
     curing_b.append(curing_fit_area[0][1])
     curing_x0.append(curing_fit_area[0][2])
+    
+    #2D fit and plot:
+    x_data_ = np.c_[xxx.flatten(), yyy.flatten()]
+    y_data_ = gam_area_2d95.predict(x_data_)
+    fit_area_2d = curve_fit(func_2d, xdata=x_data_,ydata=y_data_, p0=[1000, 0.1, 100,0.5,70], maxfev=7000)
+    fit_prms = fit_area_2d[0]
+    fit_area_2d_r2 = 1 - (
+                            np.sum((y_data_ - func_2d(x_data_, fit_prms[0], fit_prms[1], fit_prms[2],fit_prms[3],fit_prms[4]))**2)
+                             /(np.sum((y_data_ - np.mean(y_data_))**2))
+                             )
+    print('R2 of fit to 2D area GAM: %1.4f' % fit_area_2d_r2)
+    
+    #Kind of have to make this plot the hard way.
+    for i in range(0, len(xx9)):
+        Z[:,i] = func_2d(np.c_[xxx[:,i],yyy[:,i]], fit_prms[0], fit_prms[1], fit_prms[2], fit_prms[3], fit_prms[4])
+    
+    axs7[1].plot_surface(xxx, yyy, Z, cmap='viridis')
+    axs7[1].set_title('function fit')
+    fig7.suptitle('Area of Incident vs curing/fuel moisture')   
+    
+    twod_a0.append(fit_prms[0])
+    twod_b0.append(fit_prms[1])
+    twod_a1.append(fit_prms[2])
+    twod_b1.append(fit_prms[3])
+    twod_y0.append(fit_prms[4])
     
     print("************************************")
     
@@ -544,15 +640,17 @@ if __name__=="__main__":
     cheney_curing1d = 1.12/(1+59.2*np.exp(-0.124*(xx6_cur-50)))*gam_len_cur95.predict(100)
     
     fig10, axs10 = plt.subplots(1,2, figsize=(11,5))
+    len_moist_pred = gam_len_fmc95.predict(xx6)
+    len_cur_pred = gam_len_cur95.predict(xx6_cur)
     axs10[0].scatter(moisture_incident.values, length_incident.values, facecolor='gray', edgecolors='none', s=8)
-    axs10[0].plot(xx6, gam_len_fmc95.predict(xx6), color='tab:blue')    
+    axs10[0].plot(xx6, len_moist_pred, color='tab:blue')    
     axs10[0].set_ylabel('Length (km)')
     axs10[0].set_ylim(0,5)
     axs10[0].set_xlabel('Moisture (McArthur) %')
     axs10[0].set_title('Fuel moisture', fontsize=16)
-    axs10[0].legend(['points','95%GAM'])
+    axs10[0].legend(['points',str(int(expectile_set*100))+'%GAM'])
     axs10[1].scatter(curing_incident.values, length_incident.values, facecolor='gray', edgecolors='none', s=8)
-    axs10[1].plot(xx6_cur, gam_len_cur95.predict(xx6_cur), color='tab:blue')    
+    axs10[1].plot(xx6_cur, len_cur_pred, color='tab:blue')    
     axs10[1].plot(xx6_cur, cruz_curing1d, color='green')
     axs10[1].plot(xx6_cur, cheney_curing1d, color='orange')
     axs10[1].set_ylim(0,4)
@@ -577,9 +675,9 @@ if __name__=="__main__":
             xx10[:,1] = yy10[i,1]
             Z[:,i] = gam_len_2d95.predict(xx10)
 
-    fig11, axs11 = plt.subplots(1, subplot_kw={"projection": "3d"})
-    axs11.plot_surface(xxx, yyy, Z, cmap='viridis')
-    axs11.set_title('Char. length vs curing and fuel moisture')
+    fig11, axs11 = plt.subplots(1,2, figsize=(11,6), subplot_kw={"projection": "3d"})
+    axs11[0].plot_surface(xxx, yyy, Z, cmap='viridis')
+    axs11[0].set_title('Char. length vs curing and fuel moisture')
                 
     #Compare to the Cheney/Cruz models.
     max_len = gam_len_2d95.predict([[0,100]]) #max is 0% FMC, 100% curing.
@@ -592,23 +690,54 @@ if __name__=="__main__":
     cheney_good = goodfit(res_cheney, len_null95, expectile_set)
     print("Goodness for current grass functions, Cruz curing: %1.3f " % cruz_good)
     print("Goodness for current grass functions, Cheney curing: %1.3f " % cheney_good)
-    print("**************************************")
+    
     
     moisture_fit_len = curve_fit(func_neg_exp, xx6.flatten(), gam_len_fmc95.predict(xx6))
+    moisture_fit_len_r2 = 1 - (np.sum((len_moist_pred - func_neg_exp(xx6, moisture_fit_len[0][0], moisture_fit_len[0][1]))**2)
+                              /(np.sum((len_moist_pred - np.mean(len_moist_pred))**2)))
+    print('R2 of exponential fit to moisture length GAM: %1.4f ' % moisture_fit_len_r2)
     axs10[0].plot(xx6.flatten(), func_neg_exp(xx6, moisture_fit_len[0][0], moisture_fit_len[0][1]), color='r', label='function fit')
     axs10[0].legend(['points','95%', 'function fit'])
     moisture_name.append('Length_incident')
     moisture_a.append(moisture_fit_len[0][0])
     moisture_b.append(moisture_fit_len[0][1])
     
-    curing_fit_len = curve_fit(func_sigmoid_scaled, xx6_cur.flatten(), gam_len_cur95.predict(xx6_cur), p0=[2.0, 50, 60], bounds=([1,0,0], [4,1000,100]), maxfev=5000)
+    curing_fit_len = curve_fit(func_sigmoid_scaled, xx6_cur.flatten(), gam_len_cur95.predict(xx6_cur), p0=[2.0, 5, 60], bounds=([1,0,0], [10,10,1000]), maxfev=5000)
+    curing_fit_len_r2 = 1 - (np.sum((len_cur_pred - func_sigmoid_scaled(xx6_cur, curing_fit_len[0][0], curing_fit_len[0][1], curing_fit_len[0][2]))**2)
+                              /(np.sum((len_cur_pred - np.mean(len_cur_pred))**2)))
+    print('R2 of sigmoid fit to curing length GAM: %1.4f ' % curing_fit_len_r2)
     axs10[1].plot(xx6_cur.flatten(), func_sigmoid_scaled(xx6_cur.flatten(), curing_fit_len[0][0],  curing_fit_len[0][1], curing_fit_len[0][2]), color='r', label='function fit')
-    axs10[1].legend(['points','95%', 'Cruz', 'Cheney', 'function fit'])
+    axs10[1].legend(['points',str(int(expectile_set*100))+'%', 'Cruz', 'Cheney', 'function fit'])
     curing_a.append(curing_fit_len[0][0])
     curing_b.append(curing_fit_len[0][1])
     curing_x0.append(curing_fit_len[0][2])
     
+    #2D fit and plot:
+    x_data_ = np.c_[xxx.flatten(), yyy.flatten()]
+    y_data_ = gam_len_2d95.predict(x_data_)
+    fit_len_2d = curve_fit(func_2d, xdata=x_data_,ydata=y_data_, p0=[2, 0.1,2,0.11,50], maxfev=5000)
+    fit_prms = fit_len_2d[0]
+    fit_len_2d_r2 = 1 - (
+                            np.sum((y_data_ - func_2d(x_data_, fit_prms[0], fit_prms[1], fit_prms[2],fit_prms[3],fit_prms[4]))**2)
+                             /(np.sum((y_data_ - np.mean(y_data_))**2))
+                             )
+    print('R2 of fit to 2D length GAM: %1.4f' % fit_len_2d_r2)
     
+    #Kind of have to make this plot the hard way.
+    for i in range(0, len(xx10)):
+        Z[:,i] = func_2d(np.c_[xxx[:,i],yyy[:,i]], fit_prms[0], fit_prms[1], fit_prms[2], fit_prms[3], fit_prms[4])
+    
+    axs11[1].plot_surface(xxx, yyy, Z, cmap='viridis')
+    axs11[1].set_title('function fit')
+    fig11.suptitle('Length of Incident vs curing/fuel moisture')  
+    
+    twod_a0.append(fit_prms[0])
+    twod_b0.append(fit_prms[1])
+    twod_a1.append(fit_prms[2])
+    twod_b1.append(fit_prms[3])
+    twod_y0.append(fit_prms[4])
+    
+    print("**************************************")
     #%%
     
     #Optional extra (comment in or out): Take square root of area, to calculate a "characteristic fire length"
@@ -648,21 +777,23 @@ if __name__=="__main__":
     print('Goodness of fit of characteristic length GAM on curing only: %1.3f' % len_cur_good)
     print('Goodness of fit of 2D characteristic length GAM: %1.3f' % len_2d_good)
     
-    xx7 = gam_len_fmc95.generate_X_grid(term=0)
-    xx7_cur = gam_len_cur95.generate_X_grid(term=0)    
+    xx7 = gam_len_fmc95.generate_X_grid(term=0).flatten()
+    xx7_cur = gam_len_cur95.generate_X_grid(term=0).flatten()
     cruz_curing1d = 1.036/(1+103.98*np.exp(-0.0996*(xx7_cur-20)))*gam_len_cur95.predict(100)
     cheney_curing1d = 1.12/(1+59.2*np.exp(-0.124*(xx7_cur-50)))*gam_len_cur95.predict(100)
     
     fig12, axs12 = plt.subplots(1,2, figsize=(11,5))
+    len_moist_pred = gam_len_fmc95.predict(xx7)
+    len_cur_pred = gam_len_cur95.predict(xx7_cur)
     axs12[0].scatter(moisture_region.values, length_region.values, facecolor='gray', edgecolors='none', s=8)
-    axs12[0].plot(xx7, gam_len_fmc95.predict(xx7), color='tab:blue')    
+    axs12[0].plot(xx7, len_moist_pred, color='tab:blue')    
     axs12[0].set_ylabel('Length (km)')
     axs12[0].set_ylim(0,2)
     axs12[0].set_xlabel('Moisture (McArthur) %')
     axs12[0].set_title('Fuel moisture', fontsize=16)
-    axs12[0].legend(['points','95%GAM'])
+    axs12[0].legend(['points',str(int(expectile_set*100))+'%GAM'])
     axs12[1].scatter(curing_region.values, length_region.values, facecolor='gray', edgecolors='none', s=8)
-    axs12[1].plot(xx7_cur, gam_len_cur95.predict(xx7_cur), color='tab:blue')    
+    axs12[1].plot(xx7_cur, len_cur_pred, color='tab:blue')    
     axs12[1].plot(xx7_cur, cruz_curing1d, color='green')
     axs12[1].plot(xx7_cur, cheney_curing1d, color='orange')
     axs12[1].set_ylim(0,2)
@@ -683,9 +814,9 @@ if __name__=="__main__":
             xx15[:,1] = yy15[i,1]
             Z[:,i] = gam_len_2d95.predict(xx15)
 
-    fig14, axs14 = plt.subplots(1, subplot_kw={"projection": "3d"})
-    axs14.plot_surface(xxx, yyy, Z, cmap='viridis')
-    axs14.set_title('Char. length vs curing and fuel moisture')
+    fig14, axs14 = plt.subplots(1,2, figsize=(11,6), subplot_kw={"projection": "3d"})
+    axs14[0].plot_surface(xxx, yyy, Z, cmap='viridis')
+    axs14[0].set_title('GAM')
             
     #Compare to the Cheney/Cruz models.
     max_len = gam_len_2d95.predict([[0,100]]) #max is 0% FMC, 100% curing.
@@ -698,22 +829,54 @@ if __name__=="__main__":
     cheney_good = goodfit(res_cheney, len_null95, expectile_set)
     print("Goodness for current grass functions, Cruz curing: %1.3f " % cruz_good)
     print("Goodness for current grass functions, Cheney curing: %1.3f " % cheney_good)
-    print("**************************************")
+
     
     moisture_fit_len_reg = curve_fit(func_neg_exp, xx7.flatten(), gam_len_fmc95.predict(xx7))
+    moisture_fit_len_r2 = 1 - (np.sum((len_moist_pred - func_neg_exp(xx7, moisture_fit_len_reg[0][0], moisture_fit_len_reg[0][1]))**2)
+                              /(np.sum((len_moist_pred - np.mean(len_moist_pred))**2)))
+    print('R2 of exponential fit to moisture length GAM (region total): %1.4f ' % moisture_fit_len_r2)
     axs12[0].plot(xx7.flatten(), func_neg_exp(xx7, moisture_fit_len_reg[0][0], moisture_fit_len_reg[0][1]), color='r', label='function fit')
-    axs12[0].legend(['points','95%', 'function fit'])
+    axs12[0].legend(['points',str(int(expectile_set*100))+'%', 'function fit'])
     moisture_name.append('Length_region')
     moisture_a.append(moisture_fit_len_reg[0][0])
     moisture_b.append(moisture_fit_len_reg[0][1])
     
     curing_fit_len_reg = curve_fit(func_sigmoid_scaled, xx7_cur.flatten(), gam_len_cur95.predict(xx7_cur), p0=[1.0, 5, 60], bounds=([0,0,0], [4,10,200]), maxfev=5000)
+    curing_fit_len_r2 = 1 - (np.sum((len_cur_pred - func_sigmoid_scaled(xx7_cur, curing_fit_len_reg[0][0], curing_fit_len_reg[0][1], curing_fit_len_reg[0][2]))**2)
+                              /(np.sum((len_cur_pred - np.mean(len_cur_pred))**2)))
+    print('R2 of sigmoid fit to curing length GAM (region total): %1.4f ' % curing_fit_len_r2)
     axs12[1].plot(xx7_cur.flatten(), func_sigmoid_scaled(xx7_cur.flatten(), curing_fit_len_reg[0][0],  curing_fit_len_reg[0][1], curing_fit_len_reg[0][2]), color='r', label='function fit')
-    axs12[1].legend(['points','95%', 'Cruz', 'Cheney', 'function fit'])
+    axs12[1].legend(['points',str(int(expectile_set*100))+'%', 'Cruz', 'Cheney', 'function fit'])
     curing_a.append(curing_fit_len_reg[0][0])
     curing_b.append(curing_fit_len_reg[0][1])
     curing_x0.append(curing_fit_len_reg[0][2])
     
+    #2D fit and plot:
+    x_data_ = np.c_[xxx.flatten(), yyy.flatten()]
+    y_data_ = gam_len_2d95.predict(x_data_)
+    fit_len_2d = curve_fit(func_2d, xdata=x_data_,ydata=y_data_, p0=[5, 0.1, 1,1,50], maxfev=7000)
+    fit_prms = fit_len_2d[0]
+    fit_len_2d_r2 = 1 - (
+                            np.sum((y_data_ - func_2d(x_data_, fit_prms[0], fit_prms[1], fit_prms[2],fit_prms[3],fit_prms[4]))**2)
+                             /(np.sum((y_data_ - np.mean(y_data_))**2))
+                             )
+    print('R2 of fit to 2D length GAM: %1.4f' % fit_len_2d_r2)
+    
+    #Kind of have to make this plot the hard way.
+    for i in range(0, len(xx10)):
+        Z[:,i] = func_2d(np.c_[xxx[:,i],yyy[:,i]], fit_prms[0], fit_prms[1], fit_prms[2], fit_prms[3], fit_prms[4])
+    
+    axs14[1].plot_surface(xxx, yyy, Z, cmap='viridis')
+    axs14[1].set_title('function fit')
+    fig14.suptitle('Length total in region vs curing/fuel moisture')  
+    
+    twod_a0.append(fit_prms[0])
+    twod_b0.append(fit_prms[1])
+    twod_a1.append(fit_prms[2])
+    twod_b1.append(fit_prms[3])
+    twod_y0.append(fit_prms[4])
+    
+    print("**************************************")
     #%%
     
     #We can do the same thing as above but for area. Total area burnt in the district, on a day.
@@ -760,20 +923,22 @@ if __name__=="__main__":
     xx11 = gam_area_fmc95.generate_X_grid(term=0)
     xx11_cur = gam_area_cur95.generate_X_grid(term=0)
     """
+    area_moist_pred = gam_area_fmc95.predict(xx11)
+    area_cur_pred = gam_area_cur95.predict(xx11_cur)
     axs16[0].scatter(moisture_region.values, fire_area_region.values, facecolor='gray', edgecolors='none', s=8)
     axs16[0].plot(xx11, gam_area_fmc95.predict(xx11), color='tab:blue')    
     axs16[0].set_ylabel('Total area burnt (ha)')
     axs16[0].set_ylim(0,2000)
     axs16[0].set_xlabel('Moisture (McArthur) %')
     axs16[0].set_title('Fuel moisture', fontsize=16)
-    axs16[0].legend(['points','mean', '95%'])
+    axs16[0].legend(['points','mean', str(int(expectile_set*100))+'%'])
     axs16[1].scatter(curing_region.values, fire_area_region.values, facecolor='gray', edgecolors='none', s=8)
     axs16[1].plot(xx11_cur, gam_area_cur95.predict(xx11_cur), color='tab:blue')
     cruz_curve_area_r = cruz_curve*gam_area_cur95.predict(100)
     cheney_curve_area_r = cheney_curve*gam_area_cur95.predict(100)
     axs16[1].plot(xx6_cur, cruz_curve_area_r, color='green')
     axs16[1].plot(xx6_cur, cheney_curve_area_r, color='orange')
-    axs16[1].set_ylim(0,1000)
+    axs16[1].set_ylim(0,500)
     axs16[1].set_xlabel('Curing %')
     axs16[1].set_title('Curing', fontsize=16)
     fig16.suptitle('Total Area burnt, by region', fontsize=20)
@@ -793,13 +958,15 @@ if __name__=="__main__":
         xx16[:,1] = yy16[i,1]
         Z[:,i] = gam_area_2d95.predict(xx16)
 
-    fig17, axs17 = plt.subplots(1, subplot_kw={"projection": "3d"})
-    axs17.plot_surface(xxx, yyy, Z, cmap='viridis')
-    axs17.set_title('Area prediction vs curing and fuel moisture')
+    fig17, axs17 = plt.subplots(1,2, figsize=(11,6), subplot_kw={"projection": "3d"})
+    axs17[0].plot_surface(xxx, yyy, Z, cmap='viridis')
+    axs17[0].set_title('Area prediction vs curing and fuel moisture')
 
-    print("************************************")
     
     moisture_fit_area_reg = curve_fit(func_neg_exp, xx11.flatten(), gam_area_fmc95.predict(xx11))
+    moisture_fit_area_r2 = 1 - (np.sum((area_moist_pred - func_neg_exp(xx11, moisture_fit_area_reg[0][0], moisture_fit_area_reg[0][1]))**2)
+                              /(np.sum((area_moist_pred - np.mean(area_moist_pred))**2)))
+    print('R2 of exponential fit to moisture area GAM (region total): %1.4f ' % moisture_fit_area_r2)
     axs16[0].plot(xx11.flatten(), func_neg_exp(xx11, moisture_fit_area_reg[0][0], moisture_fit_area_reg[0][1]), color='r', label='function fit')
     axs16[0].legend(['points','95%', 'function fit'])
     moisture_name.append('Area_region')
@@ -810,17 +977,54 @@ if __name__=="__main__":
 #    curing_fit_area_reg = curve_fit(func_sigmoid, xx11_cur.flatten(), gam_area_cur95.predict(xx11_cur.flatten()), p0=[0.02, 95], bounds=([0,80],[0.1,200]), maxfev=5000, )
     curing_fit_area_reg = curve_fit(func_sigmoid_scaled, xx11_cur.flatten(), gam_area_cur95.predict(xx11_cur.flatten()), p0=[1, 0.02, 135], maxfev=5000 )
 #    curing_fit_area = curve_fit(func_sigmoid, xx6_cur.flatten(), cheney_curve.flatten())
+    curing_fit_area_r2 = 1 - (np.sum((area_cur_pred - func_sigmoid_scaled(xx11_cur, curing_fit_area_reg[0][0], curing_fit_area_reg[0][1], curing_fit_area_reg[0][2]))**2)
+                              /(np.sum((area_cur_pred - np.mean(area_cur_pred))**2)))
+    print('R2 of sigmoid fit to curing area GAM (region total): %1.4f ' % curing_fit_area_r2)
 #    axs16a.plot(xx11_cur.flatten(), func_sigmoid(xx11_cur.flatten(), curing_fit_area_reg[0][0],  curing_fit_area_reg[0][1]), color='r', label='function fit')
     axs16[1].plot(xx11_cur.flatten(), func_sigmoid_scaled(xx11_cur.flatten(), curing_fit_area_reg[0][0],  curing_fit_area_reg[0][1], curing_fit_area_reg[0][2]), color='r', label='function fit')
-    axs16[1].legend(['points', '95%', 'Cruz','Cheney', 'function fit'])
+    axs16[1].legend(['points', str(int(expectile_set*100))+'%', 'Cruz','Cheney', 'function fit'])
     curing_a.append(curing_fit_area_reg[0][0])
     curing_b.append(curing_fit_area_reg[0][1])
     curing_x0.append(curing_fit_area_reg[0][2])
+
+
+
+    #2D fit and plot:
+    x_data_ = np.c_[xxx.flatten(), yyy.flatten()]
+    y_data_ = gam_area_2d95.predict(x_data_)
+    fit_area_2d = curve_fit(func_2d, xdata=x_data_,ydata=y_data_, p0=[5, 0.1, 1,1,50], maxfev = 7000)
+    fit_prms = fit_area_2d[0]
+    fit_area_2d_r2 = 1 - (
+        np.sum((y_data_ - func_2d(x_data_, fit_prms[0], fit_prms[1], fit_prms[2],fit_prms[3],fit_prms[4]))**2)
+        /(np.sum((y_data_ - np.mean(y_data_))**2))
+        )
+    print('R2 of fit to 2D length GAM: %1.4f' % fit_area_2d_r2)
+        
+    #Kind of have to make this plot the hard way.
+    for i in range(0, len(xx10)):
+            Z[:,i] = func_2d(np.c_[xxx[:,i],yyy[:,i]], fit_prms[0], fit_prms[1], fit_prms[2], fit_prms[3], fit_prms[4])
+        
+    axs17[1].plot_surface(xxx, yyy, Z, cmap='viridis')
+    axs17[1].set_title('function fit')
+    fig17.suptitle('Area total in region vs curing/fuel moisture')      
+    
+    twod_a0.append(fit_prms[0])
+    twod_b0.append(fit_prms[1])
+    twod_a1.append(fit_prms[2])
+    twod_b1.append(fit_prms[3])
+    twod_y0.append(fit_prms[4])
+    
+    print("************************************")
     
     #%%
     
     moisture_out = pd.DataFrame({'Data_fit': moisture_name, 'a': moisture_a, 'b': moisture_b})
-    moisture_out.to_csv('C://Users/clark/analysis1/incidents_fmc_data/function_parameters/'+region_name+'/neg_exp_moisture.csv')
-    
+    moisture_out.to_csv('C://Users/clark/analysis1/incidents_fmc_data/function_parameters/'+region_name+'/neg_exp_moisture_'+str(int(expectile_set*100))+'.csv')
+#    moisture_out.to_csv('C://Users/clark/analysis1/incidents_fmc_data/function_parameters//neg_exp_moisture_'+str(int(expectile_set*100))+'.csv')
     curing_out = pd.DataFrame({'Data_fit': moisture_name, 'a': curing_a, 'b': curing_b, 'x0': curing_x0})
-    curing_out.to_csv('C://Users/clark/analysis1/incidents_fmc_data/function_parameters/'+region_name+'/sigmoid_curing.csv')
+    curing_out.to_csv('C://Users/clark/analysis1/incidents_fmc_data/function_parameters/'+region_name+'/sigmoid_curing_'+str(int(expectile_set*100))+'.csv')
+#   curing_out.to_csv('C://Users/clark/analysis1/incidents_fmc_data/function_parameters//sigmoid_curing_'+str(int(expectile_set*100))+'.csv')
+    
+    twod_out = pd.DataFrame({'Data_fit': moisture_name[1:], 'a0': twod_a0, 'b0': twod_b0, 'a1': twod_a1, 'b1': twod_b1, 'y0': twod_y0})
+    twod_out.to_csv('C://Users/clark/analysis1/incidents_fmc_data/function_parameters/'+region_name+'/curingplusmoisture_2d_'+str(int(expectile_set*100))+'.csv')
+#    twod_out.to_csv('C://Users/clark/analysis1/incidents_fmc_data/function_parameters/curingplusmoisture_2d_'+str(int(expectile_set*100))+'.csv')
