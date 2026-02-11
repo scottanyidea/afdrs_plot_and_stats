@@ -21,9 +21,10 @@ if __name__=="__main__":
 #    table_in = pd.read_csv("C://Users/clark/OneDrive - Country Fire Authority/Documents - Fire Risk, Research & Community Preparedness - RD private/Active Projects/AFDRS Research - Eval/EVALUATION TASKS/FDI_FBIforPDD/PDD22_23/vic_aws_mar23_apr23.csv",
 #                           dtype={'Station_full': 'str', 'Station_desc': 'str', 'Primary FBM': 'str', 'Secondary FBM': 'str'},
 #                           parse_dates=['time'], date_format='%Y-%m-%d %H:%M:%S')
-    table_in = pd.read_csv("C://Users/clark/analysis1/compiled_obs/compiled_obs_statesample_20250203-20250204.csv",
+    table_in = pd.read_csv("C://Users/clark/analysis1/Case_studies/2026_01_09/obs_mangalore.csv",
                            dtype={'station_full': 'str', 'station_desc': 'str', 'primary FBM': 'str', 'secondary FBM': 'str'},
                            parse_dates=['time'], date_format='%Y-%m-%d %H:%M:%S')
+    table_in.time = pd.to_datetime(table_in.time)
 #    table_in = table_in[table_in['station_full']=='MALLACOOTA']
 #    table_in['time'] = table_in['time']-timedelta(hours=11)
     
@@ -31,10 +32,9 @@ if __name__=="__main__":
     default_grass_cond = 2
     
     #Get fuel lookup table and set fuel types we want to calculate:
-    fuel_lut = pd.read_csv("C:/Users/clark/analysis1/afdrs_fbi_recalc/data/fuel/fuel-type-model-authorised-vic-20240920010337.csv")
+    fuel_lut = pd.read_csv("C:/Users/clark/analysis1/afdrs_fbi_recalc/data/fuel/fuel-type-model-authorised-vic-20250225011044.csv")
 #    fuel_lut = pd.read_csv("C:/Users/clark/analysis1/afdrs_fbi_recalc/data/fuel/fuel-type-model-authorised-vic-generic.csv")
-    fuel_type_table = pd.read_excel("C:/Users/clark/analysis1/afdrs_fbi_recalc/data/fuel/obs_station_fuel_types_VIC.xlsx")
-    fuel_type_ = [3066, 3024, 3046, 3025]
+    fuel_type_ = [3020, 3007]
 
     #Output table same as in... plus some columns to be calculated.
     table_out = table_in
@@ -42,7 +42,9 @@ if __name__=="__main__":
     #Quick modification to DF - this is optional and should be commented out mostly:
     #table_in['DF']= 9.5
 
-    """
+    #Modification for curing - alternative values:
+    #table_in['curing'] = 90
+
     #Loop over fuel types to calculate FBI:
     #If fuel_type_ above is empty, this whole loop is skipped.
     print("Calculating FBIs")
@@ -74,7 +76,7 @@ if __name__=="__main__":
         table_out['FBI_'+str(ft)] = calculated_fdrs_output_np_arr['index_1']
         table_out['ROS_'+str(ft)] = calculated_fdrs_output_np_arr['rate_of_spread']
     
-    """
+    
     
     #OK we want FFDI and GFDI too. Let's calculate those.
     
@@ -100,15 +102,18 @@ if __name__=="__main__":
     
     table_out['FFDI'] = FFDI_SFC
     table_out['GFDI'] = GFDI_SFC
+    
     #Save:
     table_out = table_out.rename(columns={'Time': 'time', 'Station_full': 'station_full', 'Latitude': 'latitude', 'Longitude': 'longitude',
                                   'Temperature': 'temperature', 'Dew point': 'dew point', 'Wind dir': 'wind dir', 'Wind speed': 'wind speed', 'Wind gust': 'wind gust',
                                   'Curing': 'curing', 'Grass Fuel Load': 'grass fuel load'})
     table_out = table_out.drop(columns=['Unnamed: 0','station_desc'])
     #table_out.to_csv("C://Users/clark/OneDrive - Country Fire Authority/Documents - Fire Risk, Research & Community Preparedness - RD private/Active Projects/AFDRS Research - Eval/EVALUATION TASKS/FDI_FBI comparison for PDD/PDD22_23/vic_aws_mar23_apr23_fdis.csv", index=False)
-    table_out.to_csv("C:/Users/clark/analysis1/compiled_obs/obs_statesample_20250203-20250204_fdis.csv")
+    table_out.to_csv("C:/Users/clark/analysis1/Case_studies/2026_01_09/obs_mangalore_fbicalcs.csv")
+    """
     #Calculate also the maximums throughout the day.
     #TODO: Fix this by sorting by FBI then grouping by station. At the moment
     #this takes just the maximum of each column. Or... is this really what we want???
     table_out_max = table_out.groupby('station_full', as_index=False).max('Primary FBI')
     table_out_max.to_csv('C:/Users/clark/analysis1/compiled_obs/obs_statesample_20250203-20250204_fdismax.csv', index=False)
+    """

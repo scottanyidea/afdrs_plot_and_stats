@@ -24,24 +24,25 @@ def plot_fbi_points_in_fire(FBI,areas_shapefile):
         table_sub = FBI[FBI['FBM']==model_type]
         im1 = table_sub.plot(ax=axs, transform=ccrs.PlateCarree(),marker='o', color=colors[k], markersize=50, label=model_type)
 #        for x, y, indx in zip(table_sub.longitude, table_sub.latitude, table_sub.index_1):
-        for x, y, indx in zip(table_sub.longitude, table_sub.latitude, table_sub.fuel_type):
+        for x, y, indx in zip(table_sub.longitude, table_sub.latitude, table_sub.FFDI_SFC):
+#        for x, y, indx in zip(table_sub.longitude, table_sub.latitude, table_sub.fuel_type):
             axs.text(x, y, int(indx), fontsize=12)
         
         k=k+1
-    axs.legend(fontsize=16)
+    #axs.legend(fontsize=16)
 
     plt.savefig('briagolong_1oct_fueltypes.png')
     
     
 if __name__=="__main__":
     #Set dates:
-        year_sel_ = 2025
+        year_sel_ = 2026
         mon_sel = 1
-        day_sel = 27
+        day_sel = 8
 
         datetime_sel = datetime(year_sel_, mon_sel, day_sel)
 
-        forecast_day = 0
+        forecast_day = 1
         datetime_fc = datetime_sel + timedelta(days=forecast_day)
     
         #set strings here - bit of a mess but helps later!
@@ -63,18 +64,18 @@ if __name__=="__main__":
         start_time_ = np.datetime64(str(year_sel_)+'-'+mon_sel_str_fc+'-'+day_sel_str_fc+'T13:00:00')
         end_time_ = np.datetime64(str(year_sel_)+'-'+mon_sel_str_fcplus1+'-'+day_sel_str_fcplus1+'T12:00:00')
         start_ind=2
-        start_ind = np.where(recalc_file_in.time.values==start_time_)[0][0]
+        #start_ind = np.where(recalc_file_in.time.values==start_time_)[0][0]
         end_ind = np.where(recalc_file_in.time.values==end_time_)[0][0]
-        max_recalc_fbi = recalc_file_in['index_1'][start_ind:end_ind,:,:].max(dim='time', keep_attrs=True)
+#        max_recalc_fbi = recalc_file_in['index_1'][start_ind:end_ind,:,:].max(dim='time', keep_attrs=True)
 #        max_recalc_fbi = recalc_file_in['max_fbi_prelim'][1,:,:]
-#        max_recalc_fbi = recalc_file_in['FDI_SFC'][:,:,start_ind:end_ind].max(dim='time',keep_attrs=True)
+        max_recalc_fbi = recalc_file_in['FFDI_SFC'][:,:,start_ind:end_ind].max(dim='time',keep_attrs=True)
         max_recalc_rating = recalc_file_in['rating_1'][start_ind:end_ind,:,:].max(dim='time',keep_attrs=True)
 #        max_recalc_rating = rating_file_in['max_fdr_prelim'][1,:,:]
         fuel_types = recalc_file_in['fuel_type'][12,:,:]
         
         """Load shapefile for plotting"""
-        shp_in = geopandas.read_file("C:/Users/clark/analysis1/Case_studies/2025_01_27/shapefiles/Obs_20250127_2059/Obs_area.shp")
-        shp_in_subset = shp_in[shp_in['DSE_ID']==1003542]
+        shp_in = geopandas.read_file("C:/Users/clark/analysis1/Case_studies/2026_01_09/Obs_area_all_asof_20260116/Obs_area.shp")
+        shp_in_subset = shp_in[shp_in['DSE_ID']==102613027]
 #        shp_in_subset = shp_in[shp_in['CFA_ID']==1961458]
         #The polygon gives weird coordinates. Turns out it's just in a projected coordinate system, 
         #gotta change it to a geographic reference system. So convert to 4326 (WGS 84)
@@ -87,9 +88,10 @@ if __name__=="__main__":
         #merge on fuel type codes:
         clipped_recalc_ft = xr.merge([clipped_recalc, fuel_types])
         #convert to pd dataframe:
-        fbi_table_ = clipped_recalc_ft.to_dataframe().dropna(subset='index_1')
+#        fbi_table_ = clipped_recalc_ft.to_dataframe().dropna(subset='index_1')
+        fbi_table_ = clipped_recalc_ft.to_dataframe().dropna(subset='FFDI_SFC')
         #load fuel lut for mapping on fuel categories:
-        path_to_fuel_lut_ = "C:/Users/clark/analysis1/afdrs_fbi_recalc/data/fuel/fuel-type-model-authorised-vic-20240920010337.csv"
+        path_to_fuel_lut_ = "C:/Users/clark/analysis1/afdrs_fbi_recalc/data/fuel/fuel-type-model-authorised-vic-20250225011044.csv"
         fuel_lut_ = pd.read_csv(path_to_fuel_lut_)
         fuel_FBM_dict = pd.Series(fuel_lut_.FBM.values,index=fuel_lut_.FTno_State).to_dict()
         fbi_table_['FBM'] = fbi_table_['fuel_type'].map(fuel_FBM_dict)
