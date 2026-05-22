@@ -41,10 +41,10 @@ def make_observation_table_from_archive(start_timestamp, end_timestamp, stations
         except FileNotFoundError:
             print("***Could not find this, try the stamp one minute earlier...")
             time_diff_ = 0
-            while time_diff_ <= 5:
+            while time_diff_ < 5:
                 try:
-                    current_time_temp = current_time-timedelta(minutes=1)
                     time_diff_ = time_diff_ + 1
+                    current_time_temp = current_time-timedelta(minutes=time_diff_)
                     current_time_str = current_time_temp.strftime(format("%Y%m%dT%H%M"))
                     with open('M://Archived/BoM_AWS_OBS_IDZ20081_ARCHIVE/'+current_time_str_folder+'/IDZ20081_current_obs.json.'+current_time_str+'Z.gz', 'rb') as read_gz_:
                         file_data_in = json.loads(gzip.decompress(read_gz_.read()).decode('utf-8'))
@@ -53,14 +53,16 @@ def make_observation_table_from_archive(start_timestamp, end_timestamp, stations
                     break
                 except FileNotFoundError:
                     print("***Still not finding, one more step...")
+                    success_flag_ = 0
                     continue
                 except ValueError:
                     print('There was an error decoding the JSON. Skipping.')
                     break
+
             if time_diff_==5:
                 print("OK I think it's not here. Just go to the next time stamp.")
-            current_time = current_time+timedelta(minutes=10)
-            continue
+                current_time = current_time+timedelta(minutes=10)
+                continue
     
         national_data = pd.json_normalize(file_data_in['data'])
         #Check there's actually data here. Some of the files are empty...
@@ -163,11 +165,12 @@ def make_observation_table_from_archive(start_timestamp, end_timestamp, stations
 Main function
 """
 if __name__=='__main__':
-    start_date = datetime(year=2024,month=9,day=1,hour=6,minute=0,second=0)
-    end_date = datetime(year=2025, month=5,day=1,hour=23,minute=55,second=59)
-    """
-    stations_to_pick = ["NHILL AERODROME", "HORSHAM AERODROME", "EDENHOPE AIRPORT"]
-    """
+    start_date = datetime(year=2026,month=1,day=11,hour=0,minute=0,second=0)
+#    start_date = datetime(year=2025,month=1,day=30,hour=6,minute=0,second=0)
+    end_date = datetime(year=2026, month=2,day=13,hour=23,minute=55,second=59)
+    
+    stations_to_pick = ["ALBURY AIRPORT AWS"]
+    
     """
     stations_to_pick = ["AIREYS INLET", "MOUNT GELLIBRAND", "MILDURA AIRPORT", "WALPEUP RESEARCH", "HORSHAM AERODROME",
                         "NHILL AERODROME", "KANAGULK", "CASTERTON"]
@@ -183,7 +186,8 @@ if __name__=='__main__':
                         'NILMA NORTH (WARRAGUL)', 'LATROBE VALLEY AIRPORT', 'EAST SALE AIRPORT',
                         'MOUNT NOWA NOWA', 'ORBBOST', 'OMEO']
     
-    """    
+    """   
+    """
     stations_to_pick = ["AIREYS INLET", "ALBURY AIRPORT AWS", "AVALON AIRPORT", "BAIRNSDALE AIRPORT",
                         "BALLARAT AERODROME", "BEN NEVIS", "BENDIGO AIRPORT", "CAPE NELSON LIGHTHOUSE", 
                         "CAPE OTWAY LIGHTHOUSE", "CASTERTON", "CERBERUS", "CHARLTON", 
@@ -205,9 +209,14 @@ if __name__=='__main__':
                         "SWAN HILL AERODROME", "TATURA INST SUSTAINABLE AG", "VIEWBANK", "WALPEUP RESEARCH", 
                         "WANGARATTA AERO", "WARRACKNABEAL AIRPORT", "WARRNAMBOOL AIRPORT NDB", "WESTMERE", 
                         "WILSONS PROMONTORY LIGHTHOUSE", "YARRAWONGA"]
-    
+    """
     output_table = make_observation_table_from_archive(start_date, end_date, stations_to_pick)
     print(str(len(stations_to_pick))+' stations chosen in this calc')
     print(str(len(output_table['bom_id'].unique()))+' stations found.')
+    #Fix timestamps to end in every 10 minutes by subtracting whatever the last digit in the minute is
+    output_table.time = output_table.time - timedelta(minutes=int(str(output_table.time.iloc[1].minute)[-1]))
+    output_table.to_csv('C:/Users/clark/analysis1/Case_studies/2026_01_09/compiled_weather_data/obs_albury_20260111_20260213.csv')
 #    output_table.to_csv('C:/Users/clark/analysis1/compiled_obs/compiled_obs_statesample_20250203-20250204.csv')
-    output_table.to_csv("C:/Users/clark/OneDrive - Country Fire Authority/Documents - Fire Risk, Research & Community Preparedness - RD private/Active Projects/AFDRS Research - Eval/EVALUATION TASKS/FDI_FBIforPDD/PDD24_25/vic_aws_sep24_apr25.csv")
+#    output_table.to_csv("C:/Users/clark/OneDrive - Country Fire Authority/Documents - Fire Risk, Research & Community Preparedness - RD private/Active Projects/AFDRS Research - Eval/EVALUATION TASKS/FDI_FBIforPDD/PDD24_25/vic_aws_sep24_apr25_pt1.csv")
+
+    
